@@ -1,0 +1,13 @@
+[package]
+name = "stride_runner_domset"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.93"
+priority-queue = "2.1.1"
+sha1 = "0.10.6"
+signal-hook = "0.3.17"
+sqlx = { version = "0.8.2", features = ["sqlite"] }
+structopt = "0.3.26"
+tokio = "1.41.1"
