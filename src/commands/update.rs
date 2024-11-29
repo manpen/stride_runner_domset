@@ -1,14 +1,9 @@
-use std::{
-    borrow::{Borrow, BorrowMut},
-    sync::Arc,
-};
-
 use crate::utils::server_connection::{
     DownloadProgress, DownloadProgressCallback, ServerConnection,
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::info;
-use reqwest::ClientBuilder;
+use std::sync::Arc;
 use structopt::StructOpt;
 
 use super::common::CommonOpts;
@@ -24,12 +19,11 @@ pub struct UpdateOpts {
 }
 
 struct DownloadProgressBar {
-    parent: Arc<MultiProgress>,
     pb: ProgressBar,
 }
 
 impl DownloadProgressBar {
-    fn new(parent: Arc<MultiProgress>, name: String) -> anyhow::Result<Self> {
+    fn new(parent: &MultiProgress, name: String) -> anyhow::Result<Self> {
         let pb = parent.add(ProgressBar::no_length());
         pb.set_style(ProgressStyle::default_bar()
             .template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
@@ -37,7 +31,7 @@ impl DownloadProgressBar {
 
         pb.set_message(name);
 
-        Ok(Self { pb, parent })
+        Ok(Self { pb })
     }
 }
 
@@ -60,16 +54,15 @@ pub async fn command_update(common_opts: &CommonOpts, cmd_opts: &UpdateOpts) -> 
 
     info!("Start download of metadata database");
 
-    let mpb = Arc::new(MultiProgress::new());
-
     let instances_name = if cmd_opts.all_instances {
         DB_FULL_INSTANCES
     } else {
         DB_PARTIAL_INSTANCES
     };
 
-    let mut meta_pb = DownloadProgressBar::new(mpb.clone(), DB_META.into())?;
-    let mut instance_pb = DownloadProgressBar::new(mpb.clone(), instances_name.into())?;
+    let mpb = MultiProgress::new();
+    let mut meta_pb = DownloadProgressBar::new(&mpb, DB_META.into())?;
+    let mut instance_pb = DownloadProgressBar::new(&mpb, instances_name.into())?;
 
     let meta_to_path = data_dir.db_meta_file();
     let meta_server_conn = server_conn.clone();
