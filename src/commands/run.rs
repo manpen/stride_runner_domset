@@ -210,8 +210,8 @@ impl Runner {
 
     async fn main(&self) {
         let seconds = rand::thread_rng().gen_range(
-            self.context.cmd_opts.timeout / 2
-                ..(self.context.cmd_opts.timeout + self.context.cmd_opts.grace + 2),
+            self.context.cmd_opts.timeout / 4
+                ..=(self.context.cmd_opts.timeout + self.context.cmd_opts.grace),
         );
         tokio::time::sleep(Duration::from_secs(seconds)).await;
 
@@ -274,7 +274,7 @@ impl RunnerProgressBar {
         if elapsed > self.context.cmd_opts.timeout * 1000 {
             pb.set_style(
                 indicatif::ProgressStyle::default_bar()
-                    .template("{msg} [{elapsed_precise}] [{bar:50.red/blue}] SIGTERM send")
+                    .template("{msg} [{elapsed_precise}] [{bar:50.red/blue}] SIGTERM sent; grace")
                     .unwrap()
                     .progress_chars("#>-"),
             );
@@ -305,6 +305,7 @@ impl RunnerProgressBar {
 }
 
 struct ProgressDisplay {
+    context: Arc<RunContext>,
     mpb: MultiProgress,
     status_line: ProgressBar,
     pb_total: ProgressBar,
@@ -318,7 +319,7 @@ struct ProgressDisplay {
 }
 
 impl ProgressDisplay {
-    fn new(num_instances: usize) -> anyhow::Result<Self> {
+    fn new(context: Arc<RunContext>, num_instances: usize) -> anyhow::Result<Self> {
         let mpb = MultiProgress::new();
 
         let status_line = mpb.add(ProgressBar::no_length());
@@ -334,6 +335,7 @@ impl ProgressDisplay {
         pb_total.set_message("Total finished");
 
         Ok(Self {
+            context,
             mpb,
             status_line,
             pb_total,
@@ -350,7 +352,7 @@ impl ProgressDisplay {
         &self.mpb
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self, running: usize) {
         use console::{Attribute, Style};
 
         macro_rules! format_num {
@@ -372,18 +374,19 @@ impl ProgressDisplay {
             }};
         }
 
+        const CRITICAL: [Attribute; 2] = [Attribute::Bold, Attribute::Underlined];
         let parts = [
             format_num!(num_optimal, "Opt", green),
-            format_num!(num_suboptimal, "Subopt", blue),
+            if self.context.cmd_opts.report_non_optimal {
+                format_num!(num_suboptimal, "Subopt", red, CRITICAL)
+            } else {
+                format_num!(num_suboptimal, "Subopt", blue)
+            },
             format_num!(num_incomplete, "Incomp", yellow),
             format_num!(num_timeout, "Timeout", yellow),
             format_num!(num_error, "Err", red),
-            format_num!(
-                num_infeasible,
-                "Infeas",
-                red,
-                [Attribute::Bold, Attribute::Underlined]
-            ),
+            format_num!(num_infeasible, "Infeas", red, CRITICAL),
+            format!("Running: {}", running),
         ];
 
         self.status_line.set_message(parts.join(" | "));
@@ -412,7 +415,7 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
     assert!(avail_slots > 0);
     let mut running_tasks = Vec::with_capacity(avail_slots);
 
-    let mut display = ProgressDisplay::new(instances.len())?;
+    let mut display = ProgressDisplay::new(context.clone(), instances.len())?;
 
     while !instances.is_empty() || !running_tasks.is_empty() {
         if avail_slots > running_tasks.len() {
@@ -438,7 +441,7 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
             }
         });
 
-        display.tick();
+        display.tick(running_tasks.len());
 
         tokio::time::sleep(Duration::from_millis(
             if avail_slots > running_tasks.len() {
