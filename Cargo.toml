@@ -5,9 +5,11 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.93"
+derive_builder = "0.20.2"
 env_logger = "0.11.5"
 futures-util = "0.3.31"
 indicatif = { version = "0.17.9", features = ["tokio"] }
+libc = "0.2.167"
 log = "0.4.22"
 priority-queue = "2.1.1"
 reqwest = { version = "0.12.9", features = ["stream", "gzip", "zstd", "json"] }
@@ -17,7 +19,7 @@ sha1 = "0.10.6"
 signal-hook = "0.3.17"
 sqlx = { version = "0.8.2", features = ["runtime-tokio", "sqlite"] }
 structopt = "0.3.26"
-tokio = { version = "1.41.1", features = ["macros", "rt-multi-thread", "tokio-macros"] }
+tokio = { version = "1.41.1", features = ["macros", "rt-multi-thread", "tokio-macros", "process"] }
 uuid = { version = "1.11.0", features = ["v4"] }
 
 [dev-dependencies]

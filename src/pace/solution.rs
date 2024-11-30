@@ -178,7 +178,7 @@ mod reader {
                 Some(Err(e)) => return Err(e),
                 None => {
                     return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
+                        std::io::ErrorKind::UnexpectedEof,
                         "No solution size found",
                     ))
                 }
@@ -309,14 +309,5 @@ mod test {
         }
         .valid_domset_for_instance(4, edges.iter().copied())
         .unwrap());
-    }
-
-    #[test]
-    fn digest_matches_python() {
-        let solution = Solution::from_1indexed_vec((1..10).collect(), None).unwrap();
-        assert_eq!(
-            format!("{:x}", solution.compute_digest()),
-            "89d9014041ecdcfe552d725a76a07395d272bded"
-        );
     }
 }

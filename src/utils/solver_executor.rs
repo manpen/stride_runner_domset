@@ -1,0 +1,340 @@
+use std::{fs::File, path::PathBuf, process::ExitStatus, time::Duration};
+
+use derive_builder::Builder;
+use log::debug;
+use serde::{Deserialize, Serialize};
+use std::io::BufReader;
+use tokio::{
+    process::{Child, Command},
+    time::timeout,
+};
+
+use crate::pace::{graph::Node, instance_reader::PaceReader, Solution};
+
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum SolverResult {
+    Valid { data: Vec<Node> },
+    Infeasible,
+    Error,
+    Timeout,
+    IncompleteOutput,
+}
+
+#[derive(Debug, Builder)]
+pub struct SolverExecutor {
+    working_dir: PathBuf,
+    solver_path: String,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+
+    timeout: Duration,
+    grace: Duration,
+
+    instance_id: u32,
+    instance_data: String,
+}
+
+const PATH_STDIN: &str = "stdin.gr";
+const PATH_STDOUT: &str = "stdout.gr";
+const PATH_STDERR: &str = "stderr.gr";
+
+impl SolverExecutor {
+    pub async fn run(&mut self) -> anyhow::Result<SolverResult> {
+        self.move_instance_data_to_file()?;
+
+        // spawn and execute solver as child
+        let child = self.spawn_child()?;
+        let status = match self.timeout_wait_for_child_to_complete(child).await? {
+            Some(status) => status,
+            None => {
+                return Ok(SolverResult::Timeout);
+            }
+        };
+
+        // TODO: we might want to handle a non-zero exit status differently
+        if !status.success() {
+            return Ok(SolverResult::Error);
+        }
+
+        self.verify_solution()
+    }
+
+    pub fn delete_files(&self) -> anyhow::Result<()> {
+        let stdin = self.filename(PATH_STDIN);
+        let stdout = self.filename(PATH_STDOUT);
+        let stderr = self.filename(PATH_STDERR);
+
+        if stdin.exists() {
+            // we may not have an stdin file
+            std::fs::remove_file(stdin)?;
+        }
+        std::fs::remove_file(stdout)?;
+        std::fs::remove_file(stderr)?;
+
+        Ok(())
+    }
+
+    fn verify_solution(&self) -> anyhow::Result<SolverResult> {
+        let instance_file = BufReader::new(File::open(self.filename(PATH_STDIN))?);
+        let instance_reader = PaceReader::try_new(instance_file)?;
+        let n = instance_reader.number_of_nodes();
+        let mut edges = Vec::with_capacity(instance_reader.number_of_edges() as usize);
+        for edge in instance_reader {
+            edges.push(edge?);
+        }
+
+        let solution_file = BufReader::new(File::open(self.filename(PATH_STDOUT))?);
+        let solution = match Solution::read(solution_file, Some(n)) {
+            Ok(s) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                return Ok(SolverResult::IncompleteOutput);
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        match solution.valid_domset_for_instance(n, edges.into_iter()) {
+            Ok(true) => anyhow::Ok(SolverResult::Valid {
+                data: solution.solution().to_vec(),
+            }),
+            Ok(false) => anyhow::Ok(SolverResult::Infeasible),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    fn filename(&self, suffix: &str) -> PathBuf {
+        self.working_dir
+            .join(format!("iid{}.{}", self.instance_id, suffix))
+    }
+
+    fn move_instance_data_to_file(&mut self) -> anyhow::Result<()> {
+        let path = self.filename(PATH_STDIN);
+        std::fs::write(&path, &self.instance_data)?;
+        std::mem::take(&mut self.instance_data); // free allocation
+        Ok(())
+    }
+
+    fn spawn_child(&mut self) -> Result<Child, anyhow::Error> {
+        let stdin = File::open(self.filename(PATH_STDIN))?;
+        let stdout = File::create(self.filename(PATH_STDOUT))?;
+        let stderr = File::create(self.filename(PATH_STDERR))?;
+        let child = Command::new(&self.solver_path)
+            .args(&self.args)
+            .current_dir(&self.working_dir)
+            .envs(self.env.iter().cloned())
+            .stdin(stdin)
+            .stdout(stdout)
+            .stderr(stderr)
+            .spawn()?;
+        Ok(child)
+    }
+
+    /// In case of no error, we return
+    ///  - Some(ExitStatus) if the child has exited
+    ///  - None if the child has been killed using SIGKILL
+    async fn timeout_wait_for_child_to_complete(
+        &self,
+        mut child: Child,
+    ) -> anyhow::Result<Option<ExitStatus>> {
+        // we get an error if we run into the timeout
+        if let Ok(res) = timeout(self.timeout, child.wait()).await {
+            return Ok(Some(res?));
+        }
+
+        debug!(
+            "IID: {} Timeout after {}s reached; send sigterm child",
+            self.instance_id,
+            self.timeout.as_secs()
+        );
+
+        // send SIGTERM to the child (we use unsafe here, because I do not want to pull a crate for this one line)
+        if let Some(pid) = child.id() {
+            // we only get None if the child has already exited
+            unsafe {
+                libc::kill(pid as i32, libc::SIGTERM);
+            }
+        }
+
+        // issue a grace period
+        if let Ok(res) = timeout(self.grace, child.wait()).await {
+            return Ok(Some(res?));
+        }
+
+        debug!(
+            "IID: {} Grace period after {}s reached; kill child",
+            self.instance_id,
+            self.timeout.as_secs()
+        );
+
+        child.kill().await?;
+
+        Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use tempdir::TempDir;
+
+    use super::SolverExecutor;
+    use std::path::{Path, PathBuf};
+
+    const BIN_DUMMY: &str = "test_dummy";
+    const BIN_GREEDY: &str = "greedy";
+
+    const TIMEOUT_MS: u64 = 1000;
+    const GRACE_MS: u64 = 500;
+
+    const REF_ID: u32 = 1582;
+    const REF_DATA: &str = "p ds 9 8\n1 3\n1 4\n1 7\n2 8\n3 9\n4 8\n4 9\n5 6\n";
+
+    const PREFIX: &str = "stride-solver-executor-test";
+
+    fn exec_path(binary: &str) -> String {
+        for mode in ["release", "debug"] {
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("target")
+                .join(Path::new(mode))
+                .join(Path::new(binary));
+
+            if path.exists() {
+                return path.to_string_lossy().to_string();
+            }
+        }
+
+        panic!(
+            "Could not find dummy executable; please run `cargo build [--release] {binary}` first"
+        );
+    }
+
+    fn default_test_executor(binary: &str, args: Vec<String>) -> (TempDir, SolverExecutor) {
+        use std::time::Duration;
+
+        let tmp_dir = TempDir::new(PREFIX).unwrap();
+        let workdir = tmp_dir.path().to_path_buf();
+        (
+            tmp_dir,
+            super::SolverExecutorBuilder::default()
+                .solver_path(exec_path(binary))
+                .working_dir(workdir)
+                .args(args)
+                .timeout(Duration::from_millis(TIMEOUT_MS))
+                .grace(Duration::from_millis(GRACE_MS))
+                .instance_id(REF_ID)
+                .instance_data(REF_DATA.into())
+                .env(Vec::new())
+                .build()
+                .unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_normal_exit() {
+        #[allow(unused)]
+        let (tmp_dir, mut exec) = default_test_executor(BIN_DUMMY, vec!["normal".into()]);
+        exec.move_instance_data_to_file().unwrap();
+
+        let start = std::time::Instant::now();
+        let child = exec.spawn_child().unwrap();
+        let status = exec
+            .timeout_wait_for_child_to_complete(child)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            start.elapsed().as_millis() < 1000,
+            "{:?}ms",
+            start.elapsed()
+        );
+
+        assert!(status.success(), "{status:?}");
+    }
+
+    #[tokio::test]
+    async fn test_sigterm() {
+        #[allow(unused)]
+        let (tmp_dir, mut exec) = default_test_executor(BIN_DUMMY, vec!["sig-term".into()]);
+        exec.move_instance_data_to_file().unwrap();
+
+        let start = std::time::Instant::now();
+        let child = exec.spawn_child().unwrap();
+        let status = exec
+            .timeout_wait_for_child_to_complete(child)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            start.elapsed().as_millis() > TIMEOUT_MS as u128,
+            "{:?}ms",
+            start.elapsed()
+        );
+
+        assert!(status.success(), "{status:?}");
+    }
+
+    #[tokio::test]
+    async fn test_kill() {
+        #[allow(unused)]
+        let (tmp_dir, mut exec) = default_test_executor(BIN_DUMMY, vec!["never-terminate".into()]);
+        exec.move_instance_data_to_file().unwrap();
+
+        let start = std::time::Instant::now();
+        let child = exec.spawn_child().unwrap();
+        let status = exec
+            .timeout_wait_for_child_to_complete(child)
+            .await
+            .unwrap();
+
+        assert!(
+            start.elapsed().as_millis() > (TIMEOUT_MS + GRACE_MS) as u128,
+            "{:?}ms",
+            start.elapsed()
+        );
+
+        // timeout yields None if the child has been killed
+        assert!(status.is_none(), "{status:?}");
+    }
+
+    #[tokio::test]
+    async fn test_run_greedy_ok() {
+        for args in [vec![], vec!["-c"], vec!["-c", "-e"], vec!["-c", "-e", "-t"]] {
+            #[allow(unused)]
+            let (tmp_dir, mut exec) = default_test_executor(
+                BIN_GREEDY,
+                args.into_iter().map(|s| s.to_string()).collect(),
+            );
+            let status = exec.run().await.unwrap();
+
+            match status {
+                crate::utils::solver_executor::SolverResult::Valid { .. } => {}
+                _ => panic!("Unexpected result: {:?}", status),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_run_greedy_infeasible() {
+        #[allow(unused)]
+        let (tmp_dir, mut exec) = default_test_executor(BIN_GREEDY, vec!["-i".into()]);
+        let status = exec.run().await.unwrap();
+
+        match status {
+            crate::utils::solver_executor::SolverResult::Infeasible => {}
+            _ => panic!("Unexpected result: {:?}", status),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_run_greedy_timeout() {
+        #[allow(unused)]
+        let (tmp_dir, mut exec) = default_test_executor(BIN_GREEDY, vec!["-n".into()]);
+        let status = exec.run().await.unwrap();
+
+        match status {
+            crate::utils::solver_executor::SolverResult::Timeout => {}
+            _ => panic!("Unexpected result: {:?}", status),
+        }
+    }
+}
