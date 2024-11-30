@@ -78,7 +78,7 @@ fn print_result(opts: &Opt, domset: &[Node]) {
     }
 
     for u in domset {
-        println!("{u}");
+        println!("{}", u + 1);
     }
 
     if opts.empty_lines {
@@ -154,6 +154,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     if opts.never_terminate {
+        // register handler such that SIGTERM gets ignored
+        let term = Arc::new(AtomicBool::new(false));
+        signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term))?;
+
         loop {
             std::thread::sleep(Duration::from_secs(1));
         }
