@@ -1,24 +1,35 @@
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::debug;
+use rand::{seq::SliceRandom, Rng};
 use sqlx::SqlitePool;
 use std::{
+    collections::HashSet,
     io::BufRead,
     path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
 };
 use structopt::StructOpt;
-use uuid::Uuid;
+use tokio::{sync::Mutex, time::Instant};
+use uuid::{timestamp::context, Uuid};
+
+use crate::{commands::run, utils::solver_executor::SolverResult};
 
 use super::common::CommonOpts;
+
+struct MetaPool(SqlitePool);
+struct InstanceDataPool(SqlitePool);
 
 #[derive(Clone, Debug, StructOpt)]
 pub struct RunOpts {
     #[structopt(short = "-S", long)]
     solver_uuid: Option<Uuid>,
 
-    #[structopt(short = "-T", long)]
-    timeout: Option<u64>,
+    #[structopt(short = "-T", long, default_value = "300")]
+    timeout: u64,
 
-    #[structopt(short = "-G", long)]
-    grace: Option<u64>,
+    #[structopt(short = "-G", long, default_value = "5")]
+    grace: u64,
 
     #[structopt(short = "-j", long)]
     parallel_jobs: Option<usize>,
@@ -78,12 +89,33 @@ fn read_instance_list(path: &Path) -> anyhow::Result<Vec<u32>> {
     Ok(instances)
 }
 
+async fn fetch_instances_from_db(
+    MetaPool(db): &MetaPool,
+    where_clause: &str,
+) -> anyhow::Result<Vec<u32>> {
+    // there might be some "security" implications here, but I do not really care:
+    // the sqlite database is fully under user control and worst-case the
+    // user needs to re-pull it after they (intentionally) messed it up ...
+    let instances =
+        sqlx::query_scalar::<_, u32>(&format!("SELECT iid FROM Instance WHERE {}", where_clause))
+            .fetch_all(db)
+            .await?;
+
+    debug!(
+        "Read {} instances from InstanceDB where {}",
+        instances.len(),
+        where_clause
+    );
+
+    Ok(instances)
+}
+
 struct RunContext {
     common_opts: CommonOpts,
     cmd_opts: RunOpts,
 
-    db_meta: SqlitePool,
-    db_instances: SqlitePool,
+    db_meta: MetaPool,
+    db_instances: InstanceDataPool,
     //db_cache: SqlitePool,
 }
 
@@ -95,8 +127,10 @@ impl RunContext {
             common_opts,
             cmd_opts,
 
-            db_meta: Self::open_db_pool(stride_dir.db_meta_file().as_path()).await?,
-            db_instances: Self::open_db_pool(stride_dir.db_instance_file().as_path()).await?,
+            db_meta: MetaPool(Self::open_db_pool(stride_dir.db_meta_file().as_path()).await?),
+            db_instances: InstanceDataPool(
+                Self::open_db_pool(stride_dir.db_instance_file().as_path()).await?,
+            ),
             //db_cache: Self::open_db_pool(stride_dir.db_cache_file().as_path()).await?,
         })
     }
@@ -113,18 +147,308 @@ impl RunContext {
         Ok(pool)
     }
 
+    async fn build_instance_list(&self) -> anyhow::Result<Vec<u32>> {
+        if self.cmd_opts.instances.is_none() && self.cmd_opts.sql_where.is_none() {
+            anyhow::bail!("Must prove --instances and/or --sql-where");
+        }
+
+        let instances_from_file = match &self.cmd_opts.instances {
+            Some(path) => Some(read_instance_list(path.as_path())?),
+            None => None,
+        };
+
+        let instances_from_db = match &self.cmd_opts.sql_where {
+            Some(where_clause) => Some(fetch_instances_from_db(&self.db_meta, where_clause).await?),
+            None => None,
+        };
+
+        let mut instance = match (instances_from_file, instances_from_db) {
+            (Some(file), Some(db)) => {
+                let file: HashSet<_> = file.into_iter().collect();
+                let db: HashSet<_> = db.into_iter().collect();
+                file.intersection(&db).cloned().collect()
+            }
+            (Some(file), None) => file,
+            (None, Some(db)) => db,
+            (None, None) => unreachable!(),
+        };
+
+        instance.shuffle(&mut rand::thread_rng());
+
+        Ok(instance)
+    }
+
     pub fn run(&self) -> anyhow::Result<()> {
         Ok(())
     }
 }
 
-pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow::Result<()> {
-    let context = RunContext::new(common_opts.clone(), cmd_opts.clone()).await?;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RunnerResult {
+    Optimal,
+    Suboptimal,
+    Infeasible,
+    Incomplete,
+    Error,
+    Timeout,
+}
 
-    let instances_from_file = match &cmd_opts.instances {
-        Some(path) => Some(read_instance_list(path.as_path())?),
-        None => None,
-    };
+struct Runner {
+    context: Arc<RunContext>,
+    iid: u32,
+    result: Mutex<Option<RunnerResult>>,
+}
+
+impl Runner {
+    fn new(context: Arc<RunContext>, iid: u32) -> Self {
+        Self {
+            context,
+            iid,
+            result: Mutex::new(None),
+        }
+    }
+
+    async fn main(&self) {
+        let seconds = rand::thread_rng().gen_range(
+            self.context.cmd_opts.timeout / 2
+                ..(self.context.cmd_opts.timeout + self.context.cmd_opts.grace + 2),
+        );
+        tokio::time::sleep(Duration::from_secs(seconds)).await;
+
+        let mut result = self.result.lock().await;
+
+        let results = [
+            RunnerResult::Optimal,
+            RunnerResult::Suboptimal,
+            RunnerResult::Infeasible,
+            RunnerResult::Incomplete,
+            RunnerResult::Error,
+            RunnerResult::Timeout,
+        ];
+
+        *result = Some(*results.choose(&mut rand::thread_rng()).unwrap());
+    }
+
+    pub fn try_take_result(&self) -> Option<RunnerResult> {
+        match self.result.try_lock() {
+            Ok(mut x) => x.take(),
+            Err(_) => None,
+        }
+    }
+}
+
+struct RunnerProgressBar {
+    context: Arc<RunContext>,
+    iid: u32,
+    pb: Option<ProgressBar>,
+    start: tokio::time::Instant,
+    max_time_millis: u64,
+}
+
+impl RunnerProgressBar {
+    const MILLIS_BEFORE_PROGRESS_BAR: u64 = 500;
+
+    pub fn new(context: Arc<RunContext>, iid: u32) -> Self {
+        let max_time_millis = (context.cmd_opts.timeout + context.cmd_opts.grace) * 1000;
+        Self {
+            context,
+            iid,
+            start: tokio::time::Instant::now(),
+            max_time_millis,
+            pb: None,
+        }
+    }
+
+    pub fn update_progress_bar(&mut self, mpb: &ProgressDisplay, now: Instant) {
+        let elapsed = (now.duration_since(self.start).as_millis() as u64).min(self.max_time_millis);
+        if elapsed < Self::MILLIS_BEFORE_PROGRESS_BAR {
+            return; // do not create a progress bar for short running tasks
+        }
+
+        if self.pb.is_none() {
+            self.create_pb(mpb.multi_progress());
+        }
+
+        let pb = self.pb.as_ref().unwrap();
+        // there exists a progess bar -- update it (otherwise we first init it)
+        if elapsed > self.context.cmd_opts.timeout * 1000 {
+            pb.set_style(
+                indicatif::ProgressStyle::default_bar()
+                    .template("{msg} [{elapsed_precise}] [{bar:50.red/blue}] SIGTERM send")
+                    .unwrap()
+                    .progress_chars("#>-"),
+            );
+        }
+
+        pb.set_position(elapsed);
+    }
+
+    pub fn finish(&self, display: &mut ProgressDisplay, status: RunnerResult) {
+        if let Some(pb) = &self.pb {
+            display.multi_progress().remove(pb);
+        }
+
+        display.finish_job(self.iid, status);
+    }
+
+    fn create_pb(&mut self, mpb: &MultiProgress) {
+        let pb = mpb.add(indicatif::ProgressBar::new(self.max_time_millis));
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("{msg} [{elapsed_precise}] [{bar:50.cyan/blue}]")
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+        pb.set_message(format!("Inst. ID {: >6}", self.iid));
+        self.pb = Some(pb);
+    }
+}
+
+struct ProgressDisplay {
+    mpb: MultiProgress,
+    status_line: ProgressBar,
+    pb_total: ProgressBar,
+
+    num_optimal: u64,
+    num_suboptimal: u64,
+    num_infeasible: u64,
+    num_error: u64,
+    num_timeout: u64,
+    num_incomplete: u64,
+}
+
+impl ProgressDisplay {
+    fn new(num_instances: usize) -> anyhow::Result<Self> {
+        let mpb = MultiProgress::new();
+
+        let status_line = mpb.add(ProgressBar::no_length());
+        status_line.set_style(ProgressStyle::default_bar().template("{msg}").unwrap());
+
+        let pb_total = mpb.add(indicatif::ProgressBar::new(num_instances as u64));
+        pb_total.set_style(
+            ProgressStyle::default_bar()
+                .template("{msg:<15} [{elapsed_precise}] [{bar:50.green/grey}] {human_pos} of {human_len} (est: {eta})")?
+                .progress_chars("#>-"),
+        );
+
+        pb_total.set_message("Total finished");
+
+        Ok(Self {
+            mpb,
+            status_line,
+            pb_total,
+            num_optimal: 0,
+            num_suboptimal: 0,
+            num_infeasible: 0,
+            num_error: 0,
+            num_timeout: 0,
+            num_incomplete: 0,
+        })
+    }
+
+    fn multi_progress(&self) -> &MultiProgress {
+        &self.mpb
+    }
+
+    pub fn tick(&mut self) {
+        use console::{Attribute, Style};
+
+        macro_rules! format_num {
+            ($key:ident, $name:expr, $color:ident) => {
+                format_num!($key, $name, $color, [])
+            };
+            ($key:ident, $name:expr, $color:ident, $attrs : expr) => {{
+                let text = format!("{}: {:>6}", $name, self.$key);
+                if self.$key == 0 {
+                    text
+                } else {
+                    let mut style = console::Style::new().$color();
+                    for x in $attrs {
+                        style = style.attr(x);
+                    }
+
+                    style.apply_to(text).to_string()
+                }
+            }};
+        }
+
+        let parts = [
+            format_num!(num_optimal, "Opt", green),
+            format_num!(num_suboptimal, "Subopt", blue),
+            format_num!(num_incomplete, "Incomp", yellow),
+            format_num!(num_timeout, "Timeout", yellow),
+            format_num!(num_error, "Err", red),
+            format_num!(
+                num_infeasible,
+                "Infeas",
+                red,
+                [Attribute::Bold, Attribute::Underlined]
+            ),
+        ];
+
+        self.status_line.set_message(parts.join(" | "));
+    }
+
+    pub fn finish_job(&mut self, _iid: u32, status: RunnerResult) {
+        self.pb_total.inc(1);
+
+        match status {
+            RunnerResult::Optimal => self.num_optimal += 1,
+            RunnerResult::Suboptimal => self.num_suboptimal += 1,
+            RunnerResult::Infeasible => self.num_infeasible += 1,
+            RunnerResult::Error => self.num_error += 1,
+            RunnerResult::Timeout => self.num_timeout += 1,
+            RunnerResult::Incomplete => self.num_incomplete += 1,
+        }
+    }
+}
+
+pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow::Result<()> {
+    let context = Arc::new(RunContext::new(common_opts.clone(), cmd_opts.clone()).await?);
+
+    let mut instances = context.build_instance_list().await?;
+
+    let avail_slots = cmd_opts.parallel_jobs.unwrap_or(num_cpus::get());
+    assert!(avail_slots > 0);
+    let mut running_tasks = Vec::with_capacity(avail_slots);
+
+    let mut display = ProgressDisplay::new(instances.len())?;
+
+    while !instances.is_empty() || !running_tasks.is_empty() {
+        if avail_slots > running_tasks.len() {
+            let iid = match instances.pop() {
+                Some(iid) => iid,
+                None => break,
+            };
+
+            let runner = Arc::new(Runner::new(context.clone(), iid));
+            running_tasks.push((runner.clone(), RunnerProgressBar::new(context.clone(), iid)));
+
+            tokio::spawn(async move { runner.main().await });
+        }
+
+        let now = Instant::now();
+        running_tasks.retain_mut(|(runner, progress_bar)| {
+            if let Some(status) = runner.try_take_result() {
+                progress_bar.finish(&mut display, status);
+                false
+            } else {
+                progress_bar.update_progress_bar(&display, now);
+                true
+            }
+        });
+
+        display.tick();
+
+        tokio::time::sleep(Duration::from_millis(
+            if avail_slots > running_tasks.len() {
+                10
+            } else {
+                100
+            },
+        ))
+        .await;
+    }
 
     Ok(())
 }

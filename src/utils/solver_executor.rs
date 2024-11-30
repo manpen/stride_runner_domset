@@ -15,6 +15,7 @@ use crate::pace::{graph::Node, instance_reader::PaceReader, Solution};
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum SolverResult {
     Valid { data: Vec<Node> },
+    ValidCached,
     Infeasible,
     Error,
     Timeout,
