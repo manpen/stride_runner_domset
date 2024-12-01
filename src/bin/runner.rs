@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use stride_runner_domset::commands::{
     common::CommonOpts,
     init::{command_init, InitOpts},
@@ -5,6 +7,8 @@ use stride_runner_domset::commands::{
     update::{command_update, UpdateOpts},
 };
 use structopt::StructOpt;
+
+const LOG_FILE: &str = "stride-runner.log";
 
 #[derive(StructOpt)]
 enum InitEnum {
@@ -47,7 +51,14 @@ struct Arguments {
 async fn main() -> anyhow::Result<()> {
     let opts = Arguments::from_args();
 
-    env_logger::init();
+    if let Some(level) = opts.common.logging {
+        println!("Enabled logging to file {LOG_FILE} with level {level:?}");
+        let file = std::fs::File::create(LOG_FILE)?;
+        tracing_subscriber::fmt()
+            .with_max_level(level)
+            .with_writer(Mutex::new(file))
+            .init();
+    };
 
     match opts.cmd {
         Commands::InitEnum(InitEnum::Init(cmd_opts)) => {

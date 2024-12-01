@@ -2,13 +2,18 @@ use std::path::PathBuf;
 
 use reqwest::Url;
 use structopt::StructOpt;
+use tracing::level_filters::LevelFilter;
 
 use crate::utils::directory::StrideDirectory;
 
 #[derive(Clone, Debug, StructOpt)]
 pub struct CommonOpts {
-    #[structopt(short, long, help = "Prints debug information")]
-    pub debug: bool,
+    #[structopt(
+        short,
+        long,
+        help = "Enable logging to file. Possible values: info < debug < trace"
+    )]
+    pub logging: Option<LevelFilter>,
 
     #[structopt(
         long,
