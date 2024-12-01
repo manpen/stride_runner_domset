@@ -22,6 +22,9 @@ pub struct CommonOpts {
     )]
     pub data_dir: PathBuf,
 
+    #[structopt(long, help = "Path where logs are kept", default_value = "stride-logs")]
+    pub run_log_dir: PathBuf,
+
     #[structopt(
         long,
         help = "Server URL (without path!)",
