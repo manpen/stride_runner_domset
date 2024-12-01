@@ -165,7 +165,7 @@ impl Runner {
 
         self.update_state(RunnerState::PostProcessing);
 
-        self.upload_results(&result, executor.runtime().unwrap())
+        self.upload_results(&result, meta.best_score, executor.runtime().unwrap())
             .await?;
         let result = self.store_result_type(&result, &meta).await;
 
@@ -255,9 +255,33 @@ impl Runner {
         Ok(instance)
     }
 
-    async fn upload_results(&self, result: &SolverResult, runtime: Duration) -> anyhow::Result<()> {
+    async fn upload_results(
+        &self,
+        result: &SolverResult,
+        best_score: Option<u32>,
+        runtime: Duration,
+    ) -> anyhow::Result<()> {
         if self.context.cmd_opts().upload_nothing {
             return Ok(());
+        }
+
+        if self.context.cmd_opts().solver_uuid.is_none() {
+            let nice_result = match result {
+                SolverResult::Valid { data } => {
+                    if let Some(best_score) = best_score {
+                        let larger_than_score = data.len() as isize - best_score as isize;
+                        (larger_than_score - 5) * 10 < best_score as isize
+                    } else {
+                        true
+                    }
+                }
+
+                _ => false,
+            };
+
+            if !nice_result {
+                return Ok(());
+            }
         }
 
         #[derive(Debug, Serialize)]
