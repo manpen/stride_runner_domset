@@ -131,6 +131,8 @@ impl Runner {
     }
 
     pub async fn main(&self) -> anyhow::Result<()> {
+        anyhow::bail!("Not implemented");
+
         self.update_state(RunnerState::Fetching);
         let meta = self.fetch_instance_meta_data().await?;
         let data = self

@@ -10,7 +10,7 @@ use crate::commands::{
     run::{
         context::RunContext,
         display::{ProgressDisplay, RunnerProgressBar},
-        runner::Runner,
+        runner::{Runner, RunnerResult},
     },
 };
 
@@ -157,31 +157,27 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
             ));
         }
 
-        // see whether any runner finished with an error
-        for (handle, runner, _) in running_tasks.iter_mut() {
+        let now = Instant::now();
+        for (handle, runner, progress_bar) in running_tasks.iter_mut() {
+            assert!(handle.is_some());
+
             if !handle.as_ref().is_some_and(|x| x.is_finished()) {
+                if let Some(status) = runner.try_take_result() {
+                    progress_bar.finish(&mut display, status);
+                } else {
+                    progress_bar.update_progress_bar(&display, runner, now);
+                }
                 continue;
             }
 
             let handle = handle.take();
-            if let Some(handle) = handle {
-                if let Err(e) = handle.await {
-                    info!("Runner of IID {} failed with: {:?}", runner.iid(), e);
-                    return Err(e.into());
-                }
+            if let Err(e) = handle.unwrap().await {
+                info!("Runner of IID {} failed with: {:?}", runner.iid(), e);
+                return Err(e.into());
             }
         }
 
-        let now = Instant::now();
-        running_tasks.retain_mut(|(_, runner, progress_bar)| {
-            if let Some(status) = runner.try_take_result() {
-                progress_bar.finish(&mut display, status);
-                false
-            } else {
-                progress_bar.update_progress_bar(&display, runner, now);
-                true
-            }
-        });
+        running_tasks.retain_mut(|(handle, _, _)| handle.is_some());
 
         display.tick(running_tasks.len());
 
