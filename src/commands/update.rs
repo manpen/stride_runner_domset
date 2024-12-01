@@ -2,9 +2,9 @@ use crate::utils::server_connection::{
     DownloadProgress, DownloadProgressCallback, ServerConnection,
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use log::info;
 use std::sync::Arc;
 use structopt::StructOpt;
+use tracing::info;
 
 use super::common::CommonOpts;
 

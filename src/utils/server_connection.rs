@@ -1,8 +1,8 @@
 use futures_util::StreamExt;
-use log::{debug, trace};
 use reqwest::{Client, ClientBuilder, Url};
 use std::sync::Arc;
 use std::{cmp::min, fs::File, io::Write, path::Path, time::Instant};
+use tracing::debug;
 
 use crate::commands::common::CommonOpts;
 
@@ -25,6 +25,8 @@ pub trait DownloadProgressCallback {
 
 struct NoOpCallaback();
 impl DownloadProgressCallback for NoOpCallaback {}
+
+// TODO: Client is internally a Arc; remove the superfluous external
 
 impl ServerConnection {
     pub fn new_from_opts(opts: &CommonOpts) -> anyhow::Result<Self> {
@@ -77,8 +79,6 @@ impl ServerConnection {
             if let Some(total_size) = total_size {
                 downloaded = min(total_size, downloaded);
             }
-
-            trace!("Downloaded {} bytes from {}", downloaded, from_url);
 
             callback.update(DownloadProgress {
                 started: Instant::now(),

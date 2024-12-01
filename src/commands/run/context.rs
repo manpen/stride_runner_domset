@@ -1,16 +1,20 @@
 use std::collections::HashSet;
 use std::{io::BufRead, path::Path};
 
-use log::debug;
+use chrono::{DateTime, Local};
 use rand::seq::SliceRandom;
 use sqlx::SqlitePool;
+use tracing::debug;
+use uuid::Uuid;
+
+use crate::utils::instance_data_db::InstanceDataDB;
+use crate::utils::server_connection::ServerConnection;
 
 use super::super::common::CommonOpts;
 
 use super::RunOpts;
 
-pub struct MetaPool(SqlitePool);
-pub struct InstanceDataPool(SqlitePool);
+pub struct MetaPool(pub SqlitePool);
 
 /// Reads a newline separated list of instance IDs from a file.
 /// Whitespaces are trimmed from the beginning and end of each line.
@@ -61,8 +65,14 @@ pub struct RunContext {
     common_opts: CommonOpts,
     cmd_opts: RunOpts,
 
+    start: DateTime<Local>,
+    run_uuid: Uuid,
+
     db_meta: MetaPool,
-    db_instance_data: InstanceDataPool,
+
+    instance_data_db: InstanceDataDB,
+    server_conn: ServerConnection,
+
     //db_cache: SqlitePool,
     instances: Vec<u32>,
 }
@@ -70,20 +80,26 @@ pub struct RunContext {
 impl RunContext {
     pub async fn new(common_opts: CommonOpts, cmd_opts: RunOpts) -> anyhow::Result<Self> {
         let stride_dir = common_opts.stride_dir()?;
+        let server_conn = ServerConnection::new_from_opts(&common_opts)?;
+        let instance_data_db = InstanceDataDB::new(stride_dir.db_instance_file().as_path()).await?;
 
         Ok(Self {
             common_opts,
             cmd_opts,
 
+            start: chrono::Local::now(),
+            run_uuid: Uuid::new_v4(),
+
             db_meta: MetaPool(Self::open_db_pool(stride_dir.db_meta_file().as_path()).await?),
-            db_instance_data: InstanceDataPool(
-                Self::open_db_pool(stride_dir.db_instance_file().as_path()).await?,
-            ),
             //db_cache: Self::open_db_pool(stride_dir.db_cache_file().as_path()).await?,
+            //
+            server_conn,
+            instance_data_db,
             instances: Vec::new(),
         })
     }
 
+    #[allow(dead_code)]
     pub fn common_opts(&self) -> &CommonOpts {
         &self.common_opts
     }
@@ -96,16 +112,24 @@ impl RunContext {
         &self.db_meta
     }
 
-    pub fn db_instance_data(&self) -> &InstanceDataPool {
-        &self.db_instance_data
-    }
-
     pub fn instance_list(&self) -> &[u32] {
         &self.instances
     }
 
-    pub fn instance_list_mut(&mut self) -> &mut Vec<u32> {
-        &mut self.instances
+    pub fn start(&self) -> DateTime<Local> {
+        self.start
+    }
+
+    pub fn run_uuid(&self) -> Uuid {
+        self.run_uuid
+    }
+
+    pub fn server_conn(&self) -> &ServerConnection {
+        &self.server_conn
+    }
+
+    pub fn instance_data_db(&self) -> &InstanceDataDB {
+        &self.instance_data_db
     }
 
     pub async fn build_instance_list(&mut self) -> anyhow::Result<()> {
@@ -119,7 +143,9 @@ impl RunContext {
         };
 
         let instances_from_db = match &self.cmd_opts.sql_where {
-            Some(where_clause) => Some(fetch_instances_from_db(&self.db_meta, where_clause).await?),
+            Some(where_clause) => {
+                Some(fetch_instances_from_db(self.db_meta(), where_clause).await?)
+            }
             None => None,
         };
 
@@ -134,7 +160,11 @@ impl RunContext {
             (None, None) => unreachable!(),
         };
 
-        instance.shuffle(&mut rand::thread_rng());
+        if self.cmd_opts.sort_instances {
+            instance.sort_unstable();
+        } else {
+            instance.shuffle(&mut rand::thread_rng());
+        }
 
         self.instances = instance;
         Ok(())

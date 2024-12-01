@@ -1,33 +1,68 @@
-use log::debug;
+use anyhow::Context;
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePoolOptions, Sqlite, SqlitePool};
 use std::path::Path;
+use tracing::{debug, trace};
 
 use super::server_connection::ServerConnection;
 
+// Use strong type for instance id (IId) and data id (DId)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IId(pub u32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DId(pub u32);
+
 pub struct InstanceDataDB {
-    db: SqlitePool,
+    instance_data_db: SqlitePool,
 }
 
 impl InstanceDataDB {
     pub async fn new(db_path: &Path) -> anyhow::Result<Self> {
         let db = Self::connect_or_create_db(db_path).await?;
-        Ok(Self { db })
+        Ok(Self {
+            instance_data_db: db,
+        })
     }
 
     pub async fn fetch_data(
         &self,
         server_conn: &ServerConnection,
-        iid: u32,
-    ) -> anyhow::Result<Option<String>> {
-        let from_db = self.fetch_data_from_db(iid).await?;
+        meta_db: &SqlitePool,
+        iid: IId,
+    ) -> anyhow::Result<String> {
+        let did = self
+            .get_did_from_iid(meta_db, iid)
+            .await
+            .with_context(|| format!("Fetching DID for {:?}", iid))?;
+
+        self.fetch_data_with_did(server_conn, iid, did).await
+    }
+
+    pub async fn fetch_data_with_did(
+        &self,
+        server_conn: &ServerConnection,
+        iid: IId,
+        did: DId,
+    ) -> anyhow::Result<String> {
+        let from_db = self.fetch_data_from_db(did).await?;
         if let Some(data) = from_db {
-            return Ok(Some(data));
+            debug!(
+                "Fetched instance data for {iid:?} / {did:?} from db; size: {}",
+                data.len()
+            );
+            return Ok(data);
         }
 
         let from_server = self.fetch_from_server(server_conn, iid).await?;
+
+        debug!(
+            "Fetched data for {iid:?} from server; size: {}",
+            from_server.len()
+        );
+
         // TODO: We may need to handle locks here
-        self.insert_into_db(iid, &from_server).await?;
-        Ok(Some(from_server))
+        self.insert_into_db(did, &from_server).await?;
+        Ok(from_server)
     }
 
     async fn connect_or_create_db(path: &Path) -> anyhow::Result<SqlitePool> {
@@ -47,9 +82,10 @@ impl InstanceDataDB {
             .connect(path)
             .await?;
 
-        debug!("Connection to SQLite database {path} is successful!");
+        trace!("Connection to SQLite database {path} is successful!");
 
         if !already_exists {
+            debug!("Creating table `InstanceData` in database {}", path);
             sqlx::query("CREATE TABLE InstanceData ( did INT PRIMARY KEY, data LONGBLOB);")
                 .execute(&pool)
                 .await
@@ -59,23 +95,36 @@ impl InstanceDataDB {
         Ok(pool)
     }
 
-    async fn fetch_data_from_db(&self, iid: u32) -> anyhow::Result<Option<String>> {
-        match sqlx::query_scalar::<_, String>("SELECT data FROM InstanceData WHERE did = ? LIMIT 1")
-            .bind(iid)
-            .fetch_one(&self.db)
-            .await
+    async fn fetch_data_from_db(&self, did: DId) -> anyhow::Result<Option<String>> {
+        match sqlx::query_scalar::<_, Vec<u8>>(
+            "SELECT data FROM InstanceData WHERE did = ? LIMIT 1",
+        )
+        .bind(did.0)
+        .fetch_one(&self.instance_data_db)
+        .await
         {
-            Ok(data) => Ok(Some(data)),
+            Ok(data) => Ok(Some(String::from_utf8(data)?)),
             Err(sqlx::Error::RowNotFound) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
 
-    async fn insert_into_db(&self, iid: u32, data: &str) -> anyhow::Result<()> {
+    async fn get_did_from_iid(&self, meta_db: &SqlitePool, iid: IId) -> anyhow::Result<DId> {
+        match sqlx::query_scalar::<_, u32>("SELECT data_did FROM Instance WHERE iid = ? LIMIT 1")
+            .bind(iid.0)
+            .fetch_one(meta_db)
+            .await
+        {
+            Ok(did) => Ok(DId(did)),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn insert_into_db(&self, did: DId, data: &str) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO InstanceData (did, data) VALUES (?, ?);")
-            .bind(iid)
+            .bind(did.0)
             .bind(data)
-            .execute(&self.db)
+            .execute(&self.instance_data_db)
             .await?;
 
         Ok(())
@@ -84,11 +133,11 @@ impl InstanceDataDB {
     pub async fn fetch_from_server(
         &self,
         server_conn: &ServerConnection,
-        iid: u32,
+        iid: IId,
     ) -> anyhow::Result<String> {
         let url = server_conn
             .base_url()
-            .join(&format!("api/instances/download/{}", iid))?;
+            .join(&format!("api/instances/download/{}", iid.0))?;
 
         let resp = server_conn.client_arc().get(url).send().await?;
         resp.error_for_status_ref()?;
@@ -107,10 +156,13 @@ mod test {
         utils::{instance_data_db::InstanceDataDB, server_connection::ServerConnection},
     };
 
+    use super::*;
+
     const PREFIX: &str = "stride-instance-data-db-test";
     const SERVER: &str = "https://domset.algorithm.engineering";
 
-    const REF_ID: u32 = 1582;
+    const REF_IID: IId = IId(1582);
+    const REF_DID: DId = DId(1670);
     const REF_DATA: &str = "p ds 9 8\n1 3\n1 4\n1 7\n2 8\n3 9\n4 8\n4 9\n5 6\n";
 
     #[tokio::test]
@@ -121,22 +173,22 @@ mod test {
         // the first call will create the db
         {
             let db = InstanceDataDB::new(db_path.as_path()).await.unwrap();
-            db.insert_into_db(1, "Hello").await.unwrap();
+            db.insert_into_db(DId(1), "Hello").await.unwrap();
         }
 
         // the second should reconnect to the existing db
         {
             let db = InstanceDataDB::new(db_path.as_path()).await.unwrap();
-            db.insert_into_db(2, "Hi").await.unwrap();
+            db.insert_into_db(DId(2), "Hi").await.unwrap();
 
             // this entry we previously inserted should still be there
-            assert!(db.insert_into_db(1, "Hello").await.is_err());
+            assert!(db.insert_into_db(DId(1), "Hello").await.is_err());
         }
     }
 
     #[tokio::test]
     async fn fetch_data() {
-        const ID: u32 = 1;
+        const DID: DId = DId(1);
         const VALUE: &str = "Hello";
 
         let tmp_dir = TempDir::new(PREFIX).unwrap();
@@ -146,14 +198,14 @@ mod test {
 
         // fetch existing row
         {
-            db.insert_into_db(ID, VALUE).await.unwrap();
-            let data = db.fetch_data_from_db(ID).await.unwrap();
+            db.insert_into_db(DID, VALUE).await.unwrap();
+            let data = db.fetch_data_from_db(DID).await.unwrap();
             assert_eq!(data, Some(VALUE.to_string()));
         }
 
         // fetch non-existing row
         assert!(db
-            .fetch_data_from_db(ID + 1)
+            .fetch_data_from_db(DId(DID.0 + 1))
             .await
             .is_ok_and(|x| x.is_none()))
     }
@@ -179,7 +231,7 @@ mod test {
         let db_path = tmp_dir.path().join("test.db");
         let db = InstanceDataDB::new(db_path.as_path()).await.unwrap();
 
-        let data = db.fetch_from_server(&server_conn, REF_ID).await.unwrap();
+        let data = db.fetch_from_server(&server_conn, REF_IID).await.unwrap();
         assert_data_matches_ref(&data);
     }
 
@@ -193,13 +245,19 @@ mod test {
 
         // fetch from server
         {
-            let data = db.fetch_data(&server_conn, REF_ID).await.unwrap().unwrap();
+            let data = db
+                .fetch_data_with_did(&server_conn, REF_IID, REF_DID)
+                .await
+                .unwrap();
             assert_data_matches_ref(&data);
         }
 
         // fetch from db
         {
-            let data = db.fetch_data(&server_conn, REF_ID).await.unwrap().unwrap();
+            let data = db
+                .fetch_data_with_did(&server_conn, REF_IID, REF_DID)
+                .await
+                .unwrap();
             assert_data_matches_ref(&data);
         }
     }

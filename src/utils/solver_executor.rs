@@ -1,17 +1,18 @@
 use std::{fs::File, path::PathBuf, process::ExitStatus, time::Duration};
 
+use anyhow::Context;
 use derive_builder::Builder;
-use log::debug;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::io::BufReader;
 use tokio::{
     process::{Child, Command},
-    time::timeout,
+    time::{timeout, Instant},
 };
+use tracing::debug;
 
 use crate::pace::{graph::Node, instance_reader::PaceReader, Solution};
 
-#[derive(Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Debug, Serialize, Eq, PartialEq)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum SolverResult {
     Valid { data: Vec<Node> },
@@ -25,12 +26,15 @@ pub enum SolverResult {
 #[derive(Debug, Builder)]
 pub struct SolverExecutor {
     working_dir: PathBuf,
-    solver_path: String,
+    solver_path: PathBuf,
     args: Vec<String>,
     env: Vec<(String, String)>,
 
     timeout: Duration,
     grace: Duration,
+
+    #[builder(setter(skip))]
+    runtime: Option<Duration>,
 
     instance_id: u32,
     instance_data: String,
@@ -45,8 +49,12 @@ impl SolverExecutor {
         self.move_instance_data_to_file()?;
 
         // spawn and execute solver as child
+        let start_time = Instant::now();
         let child = self.spawn_child()?;
-        let status = match self.timeout_wait_for_child_to_complete(child).await? {
+        let wait_result = self.timeout_wait_for_child_to_complete(child).await?;
+        self.runtime = Some(start_time.elapsed());
+
+        let status = match wait_result {
             Some(status) => status,
             None => {
                 return Ok(SolverResult::Timeout);
@@ -76,6 +84,10 @@ impl SolverExecutor {
         Ok(())
     }
 
+    pub fn runtime(&self) -> Option<Duration> {
+        self.runtime
+    }
+
     fn verify_solution(&self) -> anyhow::Result<SolverResult> {
         let instance_file = BufReader::new(File::open(self.filename(PATH_STDIN))?);
         let instance_reader = PaceReader::try_new(instance_file)?;
@@ -96,7 +108,7 @@ impl SolverExecutor {
 
         match solution.valid_domset_for_instance(n, edges.into_iter()) {
             Ok(true) => anyhow::Ok(SolverResult::Valid {
-                data: solution.solution().to_vec(),
+                data: solution.take_1indexed_solution(),
             }),
             Ok(false) => anyhow::Ok(SolverResult::Infeasible),
             Err(e) => Err(e.into()),
@@ -116,17 +128,18 @@ impl SolverExecutor {
     }
 
     fn spawn_child(&mut self) -> Result<Child, anyhow::Error> {
-        let stdin = File::open(self.filename(PATH_STDIN))?;
-        let stdout = File::create(self.filename(PATH_STDOUT))?;
-        let stderr = File::create(self.filename(PATH_STDERR))?;
+        let stdin = File::open(self.filename(PATH_STDIN)).with_context(|| "Open STDIN")?;
+        let stdout = File::create(self.filename(PATH_STDOUT)).with_context(|| "Open STDOUT")?;
+        let stderr = File::create(self.filename(PATH_STDERR)).with_context(|| "Open STDERR")?;
+
         let child = Command::new(&self.solver_path)
             .args(&self.args)
-            .current_dir(&self.working_dir)
             .envs(self.env.iter().cloned())
             .stdin(stdin)
             .stdout(stdout)
             .stderr(stderr)
-            .spawn()?;
+            .spawn()
+            .with_context(|| "Spawn solver as child")?;
         Ok(child)
     }
 
@@ -191,7 +204,7 @@ mod test {
 
     const PREFIX: &str = "stride-solver-executor-test";
 
-    fn exec_path(binary: &str) -> String {
+    fn exec_path(binary: &str) -> PathBuf {
         for mode in ["release", "debug"] {
             let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("target")
@@ -199,7 +212,7 @@ mod test {
                 .join(Path::new(binary));
 
             if path.exists() {
-                return path.to_string_lossy().to_string();
+                return path;
             }
         }
 

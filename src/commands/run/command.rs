@@ -2,6 +2,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use structopt::StructOpt;
 use tokio::time::Instant;
+use tracing::info;
 use uuid::Uuid;
 
 use crate::commands::{
@@ -32,6 +33,9 @@ pub struct RunOpts {
     #[structopt(short = "-o", long)]
     pub report_non_optimal: bool,
 
+    #[structopt(long, help = "Sort instance list by IID; otherwise shuffle")]
+    pub sort_instances: bool,
+
     #[structopt(short = "-i", long)]
     pub instances: Option<PathBuf>,
 
@@ -58,12 +62,33 @@ pub struct RunOpts {
         help = "Do not set environment variables (STRIDE_*) for solver"
     )]
     pub no_env: bool,
+
+    #[structopt(
+        short = "-k",
+        long,
+        help = "Keep logs of successful runs in `stride-logs` dir (default: only failed runs)"
+    )]
+    pub keep_logs_on_success: bool,
+}
+
+impl RunOpts {
+    pub fn timeout_duration(&self) -> Duration {
+        Duration::from_secs(self.timeout)
+    }
+
+    pub fn grace_duration(&self) -> Duration {
+        Duration::from_secs(self.grace)
+    }
 }
 
 const DEFAULT_WAIT_TIME: Duration = Duration::from_millis(100);
 const SHORT_WAIT_TIME: Duration = Duration::from_millis(10);
 
 pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow::Result<()> {
+    if !cmd_opts.solver_binary.is_file() {
+        anyhow::bail!("Solver binary {:?} not found", cmd_opts.solver_binary);
+    }
+
     let context = Arc::new({
         // we begin with an exclusive hold on the context; after leaving this block, we may not modify it
         let mut context = RunContext::new(common_opts.clone(), cmd_opts.clone()).await?;
@@ -89,24 +114,45 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
 
     let mut next_instace = 0;
 
-    while !context.instance_list().is_empty() || !running_tasks.is_empty() {
+    while next_instace < context.instance_list().len() || !running_tasks.is_empty() {
         if avail_slots > running_tasks.len() && next_instace < context.instance_list().len() {
             let iid = context.instance_list()[next_instace];
             next_instace += 1;
 
             let runner = Arc::new(Runner::new(context.clone(), iid));
-            running_tasks.push((runner.clone(), RunnerProgressBar::new(context.clone(), iid)));
+            let handle: tokio::task::JoinHandle<Result<(), anyhow::Error>> = {
+                let runner = runner.clone();
+                tokio::spawn(async move { runner.main().await })
+            };
+            running_tasks.push((
+                Some(handle),
+                runner,
+                RunnerProgressBar::new(context.clone(), iid),
+            ));
+        }
 
-            tokio::spawn(async move { runner.main().await });
+        // see whether any runner finished with an error
+        for (handle, runner, _) in running_tasks.iter_mut() {
+            if !handle.as_ref().is_some_and(|x| x.is_finished()) {
+                continue;
+            }
+
+            let handle = handle.take();
+            if let Some(handle) = handle {
+                if let Err(e) = handle.await {
+                    info!("Runner of IID {} failed with: {:?}", runner.iid(), e);
+                    return Err(e.into());
+                }
+            }
         }
 
         let now = Instant::now();
-        running_tasks.retain_mut(|(runner, progress_bar)| {
+        running_tasks.retain_mut(|(_, runner, progress_bar)| {
             if let Some(status) = runner.try_take_result() {
                 progress_bar.finish(&mut display, status);
                 false
             } else {
-                progress_bar.update_progress_bar(&display, now);
+                progress_bar.update_progress_bar(&display, runner, now);
                 true
             }
         });

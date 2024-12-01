@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
-use console::Attribute;
+use console::{Attribute, Style};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tokio::time::Instant;
 
-use super::{context::RunContext, runner::RunnerResult};
+use super::{
+    context::RunContext,
+    runner::{Runner, RunnerResult, RunnerState},
+};
 
 pub struct ProgressDisplay {
     context: Arc<RunContext>,
@@ -112,12 +115,13 @@ pub struct RunnerProgressBar {
     context: Arc<RunContext>,
     iid: u32,
     pb: Option<ProgressBar>,
+    previous_state: Option<RunnerState>,
     start: tokio::time::Instant,
     max_time_millis: u64,
 }
 
 impl RunnerProgressBar {
-    const MILLIS_BEFORE_PROGRESS_BAR: u64 = 500;
+    const MILLIS_BEFORE_PROGRESS_BAR: u64 = 100;
 
     pub fn new(context: Arc<RunContext>, iid: u32) -> Self {
         let max_time_millis = (context.cmd_opts().timeout + context.cmd_opts().grace) * 1000;
@@ -127,10 +131,11 @@ impl RunnerProgressBar {
             start: tokio::time::Instant::now(),
             max_time_millis,
             pb: None,
+            previous_state: None,
         }
     }
 
-    pub fn update_progress_bar(&mut self, mpb: &ProgressDisplay, now: Instant) {
+    pub fn update_progress_bar(&mut self, mpb: &ProgressDisplay, runner: &Runner, now: Instant) {
         let elapsed = (now.duration_since(self.start).as_millis() as u64).min(self.max_time_millis);
         if elapsed < Self::MILLIS_BEFORE_PROGRESS_BAR {
             return; // do not create a progress bar for short running tasks
@@ -141,16 +146,36 @@ impl RunnerProgressBar {
         }
 
         let pb = self.pb.as_ref().unwrap();
-        // there exists a progess bar -- update it (otherwise we first init it)
-        if elapsed > self.context.cmd_opts().timeout * 1000 {
-            pb.set_style(
-                indicatif::ProgressStyle::default_bar()
-                    .template("{msg} [{elapsed_precise}] [{bar:50.red/blue}] SIGTERM sent; grace")
-                    .unwrap()
-                    .progress_chars("#>-"),
-            );
+
+        let runner_state = runner.state();
+        if Some(runner_state) != self.previous_state {
+            self.previous_state = Some(runner_state);
+            self.start = now;
+            self.pb.as_ref().unwrap().reset_elapsed();
+
+            if runner_state == RunnerState::Running {
+                self.style_for_running(pb);
+            } else {
+                self.style_for_waiting(pb);
+            }
         }
 
+        let message: String = match runner.state() {
+            RunnerState::Idle => "startup".into(),
+            RunnerState::Fetching => "fetching data".into(),
+            RunnerState::Starting => "starting".into(),
+            RunnerState::Running => {
+                if 1 > self.context.cmd_opts().timeout * 1000 {
+                    Style::new().red().apply_to("grace").to_string()
+                } else {
+                    "running".into()
+                }
+            }
+            RunnerState::PostProcessing => "post-processing / upload".into(),
+            RunnerState::Finished => "done".into(),
+        };
+
+        pb.set_message(message);
         pb.set_position(elapsed);
     }
 
@@ -163,14 +188,28 @@ impl RunnerProgressBar {
     }
 
     fn create_pb(&mut self, mpb: &MultiProgress) {
-        let pb = mpb.add(indicatif::ProgressBar::new(self.max_time_millis));
+        let pb = mpb.add(ProgressBar::new(self.max_time_millis));
+        self.pb = Some(pb);
+    }
+
+    fn style_for_running(&self, pb: &ProgressBar) {
+        let mut template = format!("Inst. ID {: >6} ", self.iid);
+        template += "[{elapsed_precise}] [{bar:50.cyan/blue}] {msg}";
+
         pb.set_style(
-            indicatif::ProgressStyle::default_bar()
-                .template("{msg} [{elapsed_precise}] [{bar:50.cyan/blue}]")
+            ProgressStyle::default_bar()
+                .template(&template)
                 .unwrap()
                 .progress_chars("#>-"),
         );
-        pb.set_message(format!("Inst. ID {: >6}", self.iid));
-        self.pb = Some(pb);
+
+        pb.set_length(self.max_time_millis);
+    }
+
+    fn style_for_waiting(&self, pb: &ProgressBar) {
+        let mut template = format!("Inst. ID {: >6} ", self.iid);
+        template += "[{elapsed_precise}] {spinner:.green}                                                    {msg}";
+
+        pb.set_style(ProgressStyle::default_bar().template(&template).unwrap());
     }
 }
