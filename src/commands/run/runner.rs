@@ -5,7 +5,6 @@ use std::sync::{
 
 use serde::Serialize;
 use std::time::Duration;
-use tokio::sync::Mutex;
 use tracing::{debug, trace};
 
 use crate::utils::{
@@ -67,7 +66,6 @@ pub struct Runner {
     context: Arc<RunContext>,
     iid: u32,
     state: AtomicRunnerState,
-    result: Mutex<Option<RunnerResult>>,
 }
 
 #[derive(Default, Debug, sqlx::FromRow)]
@@ -126,11 +124,10 @@ impl Runner {
             context,
             iid,
             state: AtomicRunnerState::new(RunnerState::Idle),
-            result: Mutex::new(None),
         }
     }
 
-    pub async fn main(&self) -> anyhow::Result<()> {
+    pub async fn main(&self) -> anyhow::Result<RunnerResult> {
         self.update_state(RunnerState::Fetching);
         let meta = self.fetch_instance_meta_data().await?;
         let data = self
@@ -167,7 +164,7 @@ impl Runner {
 
         self.upload_results(&result, meta.best_score, executor.runtime().unwrap())
             .await?;
-        let result = self.store_result_type(&result, &meta).await;
+        let result = self.to_result_type(&result, &meta);
 
         if !self.context.cmd_opts().keep_logs_on_success {
             let successful = result == RunnerResult::Optimal
@@ -181,20 +178,14 @@ impl Runner {
 
         self.update_state(RunnerState::Finished);
 
-        Ok(())
-    }
-
-    pub fn try_take_result(&self) -> Option<RunnerResult> {
-        match self.result.try_lock() {
-            Ok(mut x) => x.take(),
-            Err(_) => None,
-        }
+        Ok(result)
     }
 
     pub fn state(&self) -> RunnerState {
         self.state.load(Ordering::Acquire)
     }
 
+    #[allow(dead_code)]
     pub fn iid(&self) -> u32 {
         self.iid
     }
@@ -329,8 +320,8 @@ impl Runner {
         Ok(())
     }
 
-    async fn store_result_type(&self, result: &SolverResult, meta: &InstanceModel) -> RunnerResult {
-        let runner_result = match &result {
+    fn to_result_type(&self, result: &SolverResult, meta: &InstanceModel) -> RunnerResult {
+        match &result {
             // at this point, we have a valid solution
             SolverResult::Valid { data } => {
                 let larger_than_best = meta
@@ -348,11 +339,6 @@ impl Runner {
             SolverResult::Error => RunnerResult::Error,
             SolverResult::Timeout => RunnerResult::Timeout,
             SolverResult::IncompleteOutput => RunnerResult::Incomplete,
-        };
-
-        let mut lock = self.result.lock().await;
-        *lock = Some(runner_result);
-
-        runner_result
+        }
     }
 }
