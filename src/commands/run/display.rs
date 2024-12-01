@@ -1,0 +1,176 @@
+use std::sync::Arc;
+
+use console::Attribute;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use tokio::time::Instant;
+
+use super::{context::RunContext, runner::RunnerResult};
+
+pub struct ProgressDisplay {
+    context: Arc<RunContext>,
+    mpb: MultiProgress,
+    status_line: ProgressBar,
+    pb_total: ProgressBar,
+
+    num_optimal: u64,
+    num_suboptimal: u64,
+    num_infeasible: u64,
+    num_error: u64,
+    num_timeout: u64,
+    num_incomplete: u64,
+}
+
+impl ProgressDisplay {
+    pub fn new(context: Arc<RunContext>) -> anyhow::Result<Self> {
+        let mpb = MultiProgress::new();
+
+        let status_line = mpb.add(ProgressBar::no_length());
+        status_line.set_style(ProgressStyle::default_bar().template("{msg}").unwrap());
+
+        let pb_total = mpb.add(indicatif::ProgressBar::new(
+            context.instance_list().len() as u64
+        ));
+        pb_total.set_style(
+            ProgressStyle::default_bar()
+                .template("{msg:<15} [{elapsed_precise}] [{bar:50.green/grey}] {human_pos} of {human_len} (est: {eta})")?
+                .progress_chars("#>-"),
+        );
+
+        pb_total.set_message("Total finished");
+
+        Ok(Self {
+            context,
+            mpb,
+            status_line,
+            pb_total,
+            num_optimal: 0,
+            num_suboptimal: 0,
+            num_infeasible: 0,
+            num_error: 0,
+            num_timeout: 0,
+            num_incomplete: 0,
+        })
+    }
+
+    fn multi_progress(&self) -> &MultiProgress {
+        &self.mpb
+    }
+
+    pub fn tick(&mut self, running: usize) {
+        macro_rules! format_num {
+            ($key:ident, $name:expr, $color:ident) => {
+                format_num!($key, $name, $color, [])
+            };
+            ($key:ident, $name:expr, $color:ident, $attrs : expr) => {{
+                let text = format!("{}: {:>6}", $name, self.$key);
+                if self.$key == 0 {
+                    text
+                } else {
+                    let mut style = console::Style::new().$color();
+                    for x in $attrs {
+                        style = style.attr(x);
+                    }
+
+                    style.apply_to(text).to_string()
+                }
+            }};
+        }
+
+        const CRITICAL: [Attribute; 2] = [Attribute::Bold, Attribute::Underlined];
+        let parts = [
+            format_num!(num_optimal, "Opt", green),
+            if self.context.cmd_opts().report_non_optimal {
+                format_num!(num_suboptimal, "Subopt", red, CRITICAL)
+            } else {
+                format_num!(num_suboptimal, "Subopt", blue)
+            },
+            format_num!(num_incomplete, "Incomp", yellow),
+            format_num!(num_timeout, "Timeout", yellow),
+            format_num!(num_error, "Err", red),
+            format_num!(num_infeasible, "Infeas", red, CRITICAL),
+            format!("Running: {}", running),
+        ];
+
+        self.status_line.set_message(parts.join(" | "));
+    }
+
+    pub fn finish_job(&mut self, _iid: u32, status: RunnerResult) {
+        self.pb_total.inc(1);
+
+        match status {
+            RunnerResult::Optimal => self.num_optimal += 1,
+            RunnerResult::Suboptimal => self.num_suboptimal += 1,
+            RunnerResult::Infeasible => self.num_infeasible += 1,
+            RunnerResult::Error => self.num_error += 1,
+            RunnerResult::Timeout => self.num_timeout += 1,
+            RunnerResult::Incomplete => self.num_incomplete += 1,
+        }
+    }
+}
+
+pub struct RunnerProgressBar {
+    context: Arc<RunContext>,
+    iid: u32,
+    pb: Option<ProgressBar>,
+    start: tokio::time::Instant,
+    max_time_millis: u64,
+}
+
+impl RunnerProgressBar {
+    const MILLIS_BEFORE_PROGRESS_BAR: u64 = 500;
+
+    pub fn new(context: Arc<RunContext>, iid: u32) -> Self {
+        let max_time_millis = (context.cmd_opts().timeout + context.cmd_opts().grace) * 1000;
+        Self {
+            context,
+            iid,
+            start: tokio::time::Instant::now(),
+            max_time_millis,
+            pb: None,
+        }
+    }
+
+    pub fn update_progress_bar(&mut self, mpb: &ProgressDisplay, now: Instant) {
+        let elapsed = (now.duration_since(self.start).as_millis() as u64).min(self.max_time_millis);
+        if elapsed < Self::MILLIS_BEFORE_PROGRESS_BAR {
+            return; // do not create a progress bar for short running tasks
+        }
+
+        if self.pb.is_none() {
+            self.create_pb(mpb.multi_progress());
+        }
+
+        let pb = self.pb.as_ref().unwrap();
+        // there exists a progess bar -- update it (otherwise we first init it)
+        if elapsed > self.context.cmd_opts().timeout * 1000 {
+            pb.set_style(
+                indicatif::ProgressStyle::default_bar()
+                    .template("{msg} [{elapsed_precise}] [{bar:50.red/blue}] SIGTERM sent; grace")
+                    .unwrap()
+                    .progress_chars("#>-"),
+            );
+        }
+
+        pb.set_position(elapsed);
+    }
+
+    pub fn finish(&self, display: &mut ProgressDisplay, status: RunnerResult) {
+        if let Some(pb) = &self.pb {
+            display.multi_progress().remove(pb);
+        }
+
+        display.finish_job(self.iid, status);
+    }
+
+    fn create_pb(&mut self, mpb: &MultiProgress) {
+        let pb = mpb.add(indicatif::ProgressBar::new(self.max_time_millis));
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("{msg} [{elapsed_precise}] [{bar:50.cyan/blue}]")
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+        pb.set_message(format!("Inst. ID {: >6}", self.iid));
+        self.pb = Some(pb);
+    }
+}
