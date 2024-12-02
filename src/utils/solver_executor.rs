@@ -209,6 +209,7 @@ mod test {
             let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("target")
                 .join(Path::new(mode))
+                .join("examples")
                 .join(Path::new(binary));
 
             if path.exists() {
