@@ -36,8 +36,31 @@ fn read_instance_list(path: &Path) -> anyhow::Result<Vec<u32>> {
         instances.push(id);
     }
 
-    debug!("Read {} instances from {:?}", instances.len(), path);
     Ok(instances)
+}
+
+async fn check_that_instances_exist(db: &MetaPool, instances: &[u32]) -> anyhow::Result<()> {
+    let all_known: HashSet<u32> = fetch_instances_from_db(db, "1=1")
+        .await?
+        .into_iter()
+        .collect();
+    let proposed: HashSet<u32> = instances.iter().cloned().collect();
+
+    if !proposed.is_subset(&all_known) {
+        let mut difference: Vec<_> = proposed.difference(&all_known).collect();
+        difference.sort();
+        let len = difference.len();
+        let diff_str: Vec<_> = difference
+            .into_iter()
+            .take(20)
+            .map(|iid| iid.to_string())
+            .collect();
+        let diff_str = diff_str.join(", ");
+
+        anyhow::bail!("List contains {len} instance ids not found in metadata.db; try run `stride-runner update`. At least following IDs were not found {diff_str}");
+    }
+
+    Ok(())
 }
 
 async fn fetch_instances_from_db(
@@ -51,12 +74,6 @@ async fn fetch_instances_from_db(
         sqlx::query_scalar::<_, u32>(&format!("SELECT iid FROM Instance WHERE {}", where_clause))
             .fetch_all(db)
             .await?;
-
-    debug!(
-        "Read {} instances from InstanceDB where {}",
-        instances.len(),
-        where_clause
-    );
 
     Ok(instances)
 }
@@ -138,13 +155,24 @@ impl RunContext {
         }
 
         let instances_from_file = match &self.cmd_opts.instances {
-            Some(path) => Some(read_instance_list(path.as_path())?),
+            Some(path) => {
+                let instances = read_instance_list(path.as_path())?;
+                debug!("Read {} instances from {:?}", instances.len(), path);
+                check_that_instances_exist(self.db_meta(), &instances).await?;
+                Some(instances)
+            }
             None => None,
         };
 
         let instances_from_db = match &self.cmd_opts.sql_where {
             Some(where_clause) => {
-                Some(fetch_instances_from_db(self.db_meta(), where_clause).await?)
+                let instances = fetch_instances_from_db(self.db_meta(), where_clause).await?;
+                debug!(
+                    "Read {} instances from InstanceDB where {}",
+                    instances.len(),
+                    where_clause
+                );
+                Some(instances)
             }
             None => None,
         };
