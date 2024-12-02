@@ -82,7 +82,7 @@ impl ProgressDisplay {
         const CRITICAL: [Attribute; 2] = [Attribute::Bold, Attribute::Underlined];
         let parts = [
             format_num!(num_optimal, "Opt", green),
-            if self.context.cmd_opts().report_non_optimal {
+            if self.context.cmd_opts().suboptimal_is_error {
                 format_num!(num_suboptimal, "Subopt", red, CRITICAL)
             } else {
                 format_num!(num_suboptimal, "Subopt", blue)

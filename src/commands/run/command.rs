@@ -48,7 +48,7 @@ pub struct RunOpts {
         long,
         help = "Set for exact solvers; treats sub-optimal solutions as errors."
     )]
-    pub report_non_optimal: bool,
+    pub suboptimal_is_error: bool,
 
     #[structopt(long, help = "Sort instance list by IID; otherwise shuffle")]
     pub sort_instances: bool,
@@ -69,12 +69,6 @@ pub struct RunOpts {
 
     #[structopt(short = "-e", help = "Export instances to a file")]
     pub export_iid_only: Option<PathBuf>,
-
-    #[structopt(
-        short = "-u",
-        help = "Upload all results to be viewed over the web interface"
-    )]
-    pub upload_all: bool,
 
     #[structopt(
         short = "-n",

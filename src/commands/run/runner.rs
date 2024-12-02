@@ -169,7 +169,7 @@ impl Runner {
         if !self.context.cmd_opts().keep_logs_on_success {
             let successful = result == RunnerResult::Optimal
                 || (result == RunnerResult::Suboptimal
-                    && !self.context.cmd_opts().report_non_optimal);
+                    && !self.context.cmd_opts().suboptimal_is_error);
 
             if successful {
                 executor.delete_files()?;
