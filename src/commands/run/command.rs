@@ -35,7 +35,7 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
         context
     });
 
-    let avail_slots = cmd_opts.parallel_jobs.unwrap_or(num_cpus::get());
+    let avail_slots = cmd_opts.parallel_jobs;
     assert!(avail_slots > 0);
     let mut running_tasks = Vec::with_capacity(avail_slots);
 
