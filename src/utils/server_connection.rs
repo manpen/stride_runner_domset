@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::{cmp::min, fs::File, io::Write, path::Path, time::Instant};
 use tracing::debug;
 
-use crate::commands::common::CommonOpts;
+use crate::commands::arguments::CommonOpts;
 
 pub struct ServerConnection {
     client: Arc<Client>,

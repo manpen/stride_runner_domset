@@ -1,104 +1,14 @@
-use std::{path::PathBuf, sync::Arc, time::Duration};
-
-use structopt::StructOpt;
+use std::{sync::Arc, time::Duration};
 use tokio::time::Instant;
-use uuid::Uuid;
 
 use crate::commands::{
-    common::CommonOpts,
+    arguments::{CommonOpts, RunOpts},
     run::{
         context::RunContext,
         display::{ProgressDisplay, RunnerProgressBar},
         runner::{Runner, RunnerResult},
     },
 };
-
-#[derive(Clone, Debug, StructOpt)]
-pub struct RunOpts {
-    pub solver_binary: PathBuf,
-
-    #[structopt(
-        short = "-S",
-        long,
-        help = "UUID of the solver to be used; enables upload of all results for later analysis"
-    )]
-    pub solver_uuid: Option<Uuid>,
-
-    #[structopt(
-        short = "-T",
-        long,
-        help = "Send SIGTERM after that many seconds",
-        default_value = "300"
-    )]
-    pub timeout: u64,
-
-    #[structopt(
-        short = "-G",
-        long,
-        help = "Kill solver after that many seconds after SIGTERM",
-        default_value = "5"
-    )]
-    pub grace: u64,
-
-    #[structopt(short = "-j", long, help = "Max. number of parallel solver runs")]
-    pub parallel_jobs: Option<usize>,
-
-    #[structopt(
-        short = "-o",
-        long,
-        help = "Set for exact solvers; treats sub-optimal solutions as errors."
-    )]
-    pub suboptimal_is_error: bool,
-
-    #[structopt(long, help = "Sort instance list by IID; otherwise shuffle")]
-    pub sort_instances: bool,
-
-    #[structopt(
-        short = "-i",
-        long,
-        help = "Path to a file with instance list (one IID per line) to be used as input"
-    )]
-    pub instances: Option<PathBuf>,
-
-    #[structopt(
-        short = "-w",
-        long = "--where",
-        help = "SELECT iid FROM Instance WHERE ...; if combined with -i the intersection is taken"
-    )]
-    pub sql_where: Option<String>,
-
-    #[structopt(short = "-e", help = "Export instances to a file")]
-    pub export_iid_only: Option<PathBuf>,
-
-    #[structopt(
-        short = "-n",
-        help = "Upload nothing, not even good solutions. PLEASE DO NOT USE SINCE THIS IS A COMMUNITY TOOL"
-    )]
-    pub upload_nothing: bool,
-
-    #[structopt(
-        short = "-E",
-        help = "Do not set environment variables (STRIDE_*) for solver"
-    )]
-    pub no_env: bool,
-
-    #[structopt(
-        short = "-k",
-        long,
-        help = "Keep logs of successful runs in `stride-logs` dir (default: only failed runs)"
-    )]
-    pub keep_logs_on_success: bool,
-}
-
-impl RunOpts {
-    pub fn timeout_duration(&self) -> Duration {
-        Duration::from_secs(self.timeout)
-    }
-
-    pub fn grace_duration(&self) -> Duration {
-        Duration::from_secs(self.grace)
-    }
-}
 
 const DEFAULT_WAIT_TIME: Duration = Duration::from_millis(100);
 const SHORT_WAIT_TIME: Duration = Duration::from_millis(10);

@@ -1,51 +1,11 @@
 use std::sync::Mutex;
 
 use stride_runner_domset::commands::{
-    common::CommonOpts,
-    register::{command_register, RegisterOpts},
-    run::{command_run, RunOpts},
-    update::{command_update, UpdateOpts},
+    arguments::*, register::command_register, run::command_run, update::command_update,
 };
 use structopt::StructOpt;
 
 const LOG_FILE: &str = "stride-runner.log";
-
-#[derive(StructOpt)]
-enum RegisterEnum {
-    Register(RegisterOpts),
-}
-
-#[derive(StructOpt)]
-enum UpdateEnum {
-    Update(UpdateOpts),
-}
-
-#[derive(StructOpt)]
-enum RunEnum {
-    Run(RunOpts),
-}
-
-#[derive(StructOpt)]
-#[allow(clippy::enum_variant_names)]
-enum Commands {
-    #[structopt(flatten)]
-    RegisterEnum(RegisterEnum),
-
-    #[structopt(flatten)]
-    UpdateEnum(UpdateEnum),
-
-    #[structopt(flatten)]
-    RunEnum(RunEnum),
-}
-
-#[derive(StructOpt)]
-struct Arguments {
-    #[structopt(flatten)]
-    common: CommonOpts,
-
-    #[structopt(subcommand)]
-    cmd: Commands,
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

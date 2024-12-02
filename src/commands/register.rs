@@ -1,9 +1,4 @@
-use structopt::StructOpt;
-
-use super::common::CommonOpts;
-
-#[derive(Debug, StructOpt)]
-pub struct RegisterOpts {}
+use super::arguments::{CommonOpts, RegisterOpts};
 
 pub async fn command_register(
     _common_opts: &CommonOpts,

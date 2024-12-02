@@ -11,9 +11,7 @@ use crate::utils::directory::StrideDirectory;
 use crate::utils::instance_data_db::InstanceDataDB;
 use crate::utils::server_connection::ServerConnection;
 
-use super::super::common::CommonOpts;
-
-use super::RunOpts;
+use super::super::arguments::{CommonOpts, RunOpts};
 
 pub struct MetaPool(pub SqlitePool);
 

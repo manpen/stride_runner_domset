@@ -4,20 +4,13 @@ use crate::utils::{
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::sync::Arc;
-use structopt::StructOpt;
 use tracing::info;
 
-use super::common::CommonOpts;
+use super::arguments::{CommonOpts, UpdateOpts};
 
 const DB_META: &str = "db_meta.db";
 const DB_PARTIAL_INSTANCES: &str = "db_partial.db";
 const DB_FULL_INSTANCES: &str = "db_full.db";
-
-#[derive(Debug, StructOpt)]
-pub struct UpdateOpts {
-    #[structopt(short, long, help = "WARNING: requires more than 10GB of storage")]
-    all_instances: bool,
-}
 
 struct DownloadProgressBar {
     pb: ProgressBar,
