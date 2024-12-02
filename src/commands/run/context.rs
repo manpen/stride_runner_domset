@@ -7,6 +7,7 @@ use sqlx::SqlitePool;
 use tracing::debug;
 use uuid::Uuid;
 
+use crate::utils::directory::StrideDirectory;
 use crate::utils::instance_data_db::InstanceDataDB;
 use crate::utils::server_connection::ServerConnection;
 
@@ -96,7 +97,7 @@ pub struct RunContext {
 
 impl RunContext {
     pub async fn new(common_opts: CommonOpts, cmd_opts: RunOpts) -> anyhow::Result<Self> {
-        let stride_dir = common_opts.stride_dir()?;
+        let stride_dir = StrideDirectory::try_default()?;
         let server_conn = ServerConnection::new_from_opts(&common_opts)?;
         let instance_data_db = InstanceDataDB::new(stride_dir.db_instance_file().as_path()).await?;
 

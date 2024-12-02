@@ -1,5 +1,6 @@
-use crate::utils::server_connection::{
-    DownloadProgress, DownloadProgressCallback, ServerConnection,
+use crate::utils::{
+    directory::StrideDirectory,
+    server_connection::{DownloadProgress, DownloadProgressCallback, ServerConnection},
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::sync::Arc;
@@ -48,7 +49,7 @@ impl DownloadProgressCallback for DownloadProgressBar {
 }
 
 pub async fn command_update(common_opts: &CommonOpts, cmd_opts: &UpdateOpts) -> anyhow::Result<()> {
-    let data_dir = common_opts.stride_dir()?;
+    let data_dir = StrideDirectory::try_default()?;
 
     let server_conn = Arc::new(ServerConnection::new_from_opts(common_opts)?);
 

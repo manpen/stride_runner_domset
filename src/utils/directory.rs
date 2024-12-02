@@ -5,6 +5,8 @@ const PATH_DB_META: &str = "metadata.db";
 const PATH_DB_CACHE: &str = "cache.db";
 const PATH_DB_INSTANCES: &str = "instances.db";
 
+const DATA_DIR: &str = ".stride";
+
 pub struct StrideDirectory {
     pub data_dir: PathBuf,
 }
@@ -23,6 +25,10 @@ impl StrideDirectory {
         }
 
         Ok(Self { data_dir })
+    }
+
+    pub fn try_default() -> anyhow::Result<Self> {
+        Self::try_new(PathBuf::from(DATA_DIR))
     }
 
     pub fn data_dir(&self) -> &Path {
