@@ -10,16 +10,16 @@ chrono = "0.4.38"
 console = "0.15.8"
 derive_builder = "0.20.2"
 futures-util = "0.3.31"
-indicatif = { version = "0.17.9", features = ["tokio"] }
+indicatif = { version = "0.17.9" } 
 libc = "0.2.167"
 num_cpus = "1.16.0"
 paste = "1.0.15"
 rand = "0.8.5"
-reqwest = { version = "0.12.9", features = ["stream", "gzip", "json"] }
+reqwest = { version = "0.12.9", default-features = false, features = ["stream", "gzip", "json", "rustls-tls"] }
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
 sha1 = "0.10.6"
-sqlx = { version = "0.8.2", features = ["runtime-tokio", "sqlite"] }
+sqlx = { version = "0.8.2",  default-features = false, features = ["migrate", "runtime-tokio", "sqlite", "derive"] }
 structopt = "0.3.26"
 tokio = { version = "1.41.1", features = ["macros", "rt-multi-thread", "process"] }
 tracing = "0.1.41"
@@ -31,3 +31,9 @@ tempdir = "0.3.7"
 signal-hook = "0.3.17"
 priority-queue = "2.1.1"
 
+[profile.smaller-release]
+inherits = "release"
+lto = true
+opt-level = "z"
+strip = true 
+codegen-units = 1
