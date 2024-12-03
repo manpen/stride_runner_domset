@@ -156,9 +156,10 @@ pub struct RunOpts {
 
     #[structopt(
         short = "-n",
+        long,
         help = "Upload nothing, not even good solutions. PLEASE DO NOT USE SINCE THIS IS A COMMUNITY TOOL"
     )]
-    pub upload_nothing: bool,
+    pub no_upload: bool,
 
     #[structopt(
         short = "-E",

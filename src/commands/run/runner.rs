@@ -252,7 +252,7 @@ impl Runner {
         best_score: Option<u32>,
         runtime: Duration,
     ) -> anyhow::Result<()> {
-        if self.context.cmd_opts().upload_nothing {
+        if self.context.cmd_opts().no_upload {
             return Ok(());
         }
 
