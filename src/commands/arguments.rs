@@ -188,7 +188,13 @@ impl RunOpts {
 /////////////////////
 
 #[derive(Debug, StructOpt)]
-pub struct RegisterOpts {}
+pub struct RegisterOpts {
+    #[structopt(
+        long,
+        help = "Confirm that you want to delete the existing UUID; store it seperately to not lose access to the website!"
+    )]
+    pub delete_old_uuid: bool,
+}
 
 /////////////////////
 
