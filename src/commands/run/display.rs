@@ -12,6 +12,7 @@ use super::{
 pub struct ProgressDisplay {
     context: Arc<RunContext>,
     mpb: MultiProgress,
+    link_line: ProgressBar,
     status_line: ProgressBar,
     pb_total: ProgressBar,
 
@@ -26,6 +27,40 @@ pub struct ProgressDisplay {
 impl ProgressDisplay {
     pub fn new(context: Arc<RunContext>) -> anyhow::Result<Self> {
         let mpb = MultiProgress::new();
+
+        let link_line = mpb.add(ProgressBar::no_length());
+        link_line.set_style(ProgressStyle::default_bar().template("{msg}").unwrap());
+        link_line.set_message(
+            match (
+                &context.cmd_opts().solver_uuid,
+                context.cmd_opts().no_upload,
+            ) {
+                (_, true) => {
+                    format!(
+                        "{} | Run: {}",
+                        Style::new().red().apply_to("upload disabled"),
+                        context.run_uuid()
+                    )
+                }
+                (Some(uuid), false) => {
+                    format!(
+                        "visit {}runs.html?solver={} | Run: {}",
+                        context.common_opts().server_url(),
+                        uuid,
+                        context.run_uuid()
+                    )
+                }
+                (_, false) => {
+                    format!(
+                        "{} | Run: {}",
+                        Style::new()
+                            .yellow()
+                            .apply_to("consider to register solver for more stats"),
+                        context.run_uuid()
+                    )
+                }
+            },
+        );
 
         let status_line = mpb.add(ProgressBar::no_length());
         status_line.set_style(ProgressStyle::default_bar().template("{msg}").unwrap());
@@ -44,6 +79,7 @@ impl ProgressDisplay {
         Ok(Self {
             context,
             mpb,
+            link_line,
             status_line,
             pb_total,
             num_optimal: 0,
@@ -108,6 +144,11 @@ impl ProgressDisplay {
             RunnerResult::Timeout => self.num_timeout += 1,
             RunnerResult::Incomplete => self.num_incomplete += 1,
         }
+    }
+
+    pub fn final_message(&self) {
+        println!("{}", self.link_line.message());
+        println!("{}", self.status_line.message());
     }
 }
 

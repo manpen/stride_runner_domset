@@ -84,5 +84,7 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
         .await;
     }
 
+    display.final_message();
+
     Ok(())
 }
