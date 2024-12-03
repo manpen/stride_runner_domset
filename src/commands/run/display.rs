@@ -43,12 +43,12 @@ impl ProgressDisplay {
                     )
                 }
                 (Some(uuid), false) => {
-                    format!(
-                        "visit {}runs.html?solver={} | Run: {}",
-                        context.common_opts().server_url(),
-                        uuid,
-                        context.run_uuid()
-                    )
+                    let url = context
+                        .server_conn()
+                        .solver_website_for_user(*uuid)
+                        .to_string();
+
+                    format!("visit {url} | Run: {}", context.run_uuid())
                 }
                 (_, false) => {
                     format!(

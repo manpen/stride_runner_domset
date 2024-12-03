@@ -3,6 +3,7 @@ use reqwest::{Client, ClientBuilder, Url};
 use std::sync::Arc;
 use std::{cmp::min, fs::File, io::Write, path::Path, time::Instant};
 use tracing::debug;
+use uuid::Uuid;
 
 use crate::commands::arguments::CommonOpts;
 
@@ -45,6 +46,11 @@ impl ServerConnection {
 
     pub fn base_url(&self) -> &Url {
         &self.base_url
+    }
+
+    pub fn solver_website_for_user(&self, uuid: Uuid) -> Url {
+        let path = format!("runs.html?solver={}", uuid);
+        self.base_url.join(&path).unwrap()
     }
 
     pub fn client_arc(&self) -> Arc<Client> {
