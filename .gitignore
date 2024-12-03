@@ -1,1 +1,6 @@
 /target
+.stride
+stride-logs
+Cargo.lock
+stride-runner.log
+*.list
