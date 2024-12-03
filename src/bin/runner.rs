@@ -1,5 +1,7 @@
 use std::sync::Mutex;
 
+use anyhow::Context;
+use console::Style;
 use stride_runner_domset::{
     commands::{
         arguments::*, register::command_register, run::command_run, update::command_update,
@@ -54,19 +56,25 @@ fn read_and_register_settings() -> anyhow::Result<Settings> {
     // try read config file and store it to global var, which will be used by the
     // Arguments parser. This is not a nice design, but I'm not aware of any better
     // approach using StructOpt.
-    if let Ok(settings) = Settings::load_from_default_path() {
-        debug!("Read settings from file: {settings:?}");
-        settings.store_to_global_variable()?;
-        return Ok(settings);
-    }
-
-    let settings = Settings::default();
     let path = StrideDirectory::try_default()?.config_file();
-    if path.is_file() {
-        anyhow::bail!("Could not read settings at {path:?}. Check syntax");
-    } else {
+
+    if !path.is_file() {
+        let style = Style::new().blue();
+        println!(
+            "{} {:?}",
+            style.apply_to("Did not detect a config file. Created a template at"),
+            path
+        );
+        println!("Have a look at it --- it may say you some work later on ;)");
+
+        let settings = Settings::default();
         settings.store_to_path(path.as_path())?;
     }
+
+    let settings = Settings::load_from_default_path()
+        .with_context(|| format!("Reading settings from {:?}", path))?;
+    debug!("Read settings from file: {settings:?}");
+    settings.store_to_global_variable()?;
 
     Ok(settings)
 }
