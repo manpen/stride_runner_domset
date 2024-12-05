@@ -179,6 +179,7 @@ pub struct RunOpts {
 
     #[structopt(
         short = "-E",
+        long,
         help = "Do not set environment variables (STRIDE_*) for solver"
     )]
     pub no_env: bool,

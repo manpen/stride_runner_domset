@@ -127,6 +127,23 @@ Examples:
 ./runner run --help
 ```
 
+### Environment Variables
+Unless the `-E`/`--no-env` flag is set, the runner will provide some additional information to the solver by setting environment variables.
+This may help you during the development of your solver, but keep in mind that these information are **not** available for PACE.
+The following variables will be set:
+
+| Name                | Optional       | Values       |
+| ------------------- | -------------- | ------------ |
+| `STRIDE_EDGES`      | always present | unsigned int |
+| `STRIDE_IID`        | always present | unsigned int |
+| `STRIDE_NODES`      | always present | unsigned int |
+| `STRIDE_BEST_SCORE` | if available   | unsigned int |
+| `STRIDE_BIPARTITE`  | if available   | false, true  |
+| `STRIDE_DIAMETER`   | if available   | unsigned int |
+| `STRIDE_TREEWIDTH`  | if available   | unsigned int |
+| `STRIDE_PLANAR`     | if available   | false, true  |
+
+
 ### Troubleshooting
 If you assigned a Solver UUID, you investigate your solvers performance on the STRIDE website (link is shown by the runner).
 By clicking on a run, are shown the performance on each instance and sort/filter by criteria such as error modes or solution quality.
