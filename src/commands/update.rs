@@ -1,9 +1,9 @@
 use crate::utils::{
-    directory::StrideDirectory,
-    server_connection::{DownloadProgress, DownloadProgressCallback, ServerConnection},
+    directory::StrideDirectory, download_progress_bar::DownloadProgressBar,
+    server_connection::ServerConnection,
 };
 use console::Style;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::MultiProgress;
 use std::sync::Arc;
 use tracing::info;
 
@@ -12,35 +12,6 @@ use super::arguments::{CommonOpts, UpdateOpts};
 const DB_META: &str = "db_meta.db";
 const DB_PARTIAL_INSTANCES: &str = "db_partial.db";
 const DB_FULL_INSTANCES: &str = "db_full.db";
-
-struct DownloadProgressBar {
-    pb: ProgressBar,
-}
-
-impl DownloadProgressBar {
-    fn new(parent: &MultiProgress, name: String) -> anyhow::Result<Self> {
-        let pb = parent.add(ProgressBar::no_length());
-        pb.set_style(ProgressStyle::default_bar()
-            .template("{msg}\n{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")?
-        .progress_chars("#>-"));
-
-        pb.set_message(name);
-
-        Ok(Self { pb })
-    }
-}
-
-impl DownloadProgressCallback for DownloadProgressBar {
-    fn init(&mut self, total_size: Option<u64>) {
-        if let Some(size) = total_size {
-            self.pb.set_length(size);
-        }
-    }
-
-    fn update(&mut self, state: DownloadProgress) {
-        self.pb.set_position(state.downloaded);
-    }
-}
 
 pub async fn command_update(common_opts: &CommonOpts, cmd_opts: &UpdateOpts) -> anyhow::Result<()> {
     let data_dir = StrideDirectory::try_default()?;
