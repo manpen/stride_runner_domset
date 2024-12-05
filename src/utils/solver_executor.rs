@@ -41,8 +41,8 @@ pub struct SolverExecutor {
 }
 
 const PATH_STDIN: &str = "stdin.gr";
-const PATH_STDOUT: &str = "stdout.gr";
-const PATH_STDERR: &str = "stderr.gr";
+const PATH_STDOUT: &str = "stdout";
+const PATH_STDERR: &str = "stderr";
 
 impl SolverExecutor {
     pub async fn run(&mut self) -> anyhow::Result<SolverResult> {
