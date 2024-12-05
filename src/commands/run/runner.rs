@@ -336,7 +336,7 @@ impl Runner {
             }
             SolverResult::ValidCached => unreachable!(),
             SolverResult::Infeasible => RunnerResult::Infeasible,
-            SolverResult::Error => RunnerResult::Error,
+            SolverResult::SyntaxError => RunnerResult::Error,
             SolverResult::Timeout => RunnerResult::Timeout,
             SolverResult::IncompleteOutput => RunnerResult::Incomplete,
         }

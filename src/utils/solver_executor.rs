@@ -18,7 +18,7 @@ pub enum SolverResult {
     Valid { data: Vec<Node> },
     ValidCached,
     Infeasible,
-    Error,
+    SyntaxError, // TODO: distinguish between syntax and runner errors
     Timeout,
     IncompleteOutput,
 }
@@ -63,7 +63,7 @@ impl SolverExecutor {
 
         // TODO: we might want to handle a non-zero exit status differently
         if !status.success() {
-            return Ok(SolverResult::Error);
+            return Ok(SolverResult::SyntaxError);
         }
 
         self.verify_solution()
