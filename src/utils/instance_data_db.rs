@@ -148,7 +148,6 @@ impl InstanceDataDB {
 
 #[cfg(test)]
 mod test {
-    use reqwest::Url;
     use tempdir::TempDir;
 
     use crate::{
