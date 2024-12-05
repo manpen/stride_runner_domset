@@ -6,6 +6,7 @@ use stride_runner_domset::{
     commands::{
         arguments::*,
         export::{command_export_instance, command_export_solution},
+        import::command_import_solution,
         register::command_register,
         run::command_run,
         update::command_update,
@@ -31,12 +32,12 @@ async fn main() -> anyhow::Result<()> {
             .init();
     };
 
-    match opts.cmd {
+    let result = match opts.cmd {
         Commands::RegisterEnum(RegisterEnum::Register(cmd_opts)) => {
-            command_register(&opts.common, &cmd_opts).await?
+            command_register(&opts.common, &cmd_opts).await
         }
         Commands::UpdateEnum(UpdateEnum::Update(cmd_opts)) => {
-            command_update(&opts.common, &cmd_opts).await?
+            command_update(&opts.common, &cmd_opts).await
         }
         Commands::RunEnum(RunEnum::Run(mut cmd_opts)) => {
             if cmd_opts.solver_binary.to_string_lossy().len() == 0 {
@@ -49,14 +50,23 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
 
-            command_run(&opts.common, &cmd_opts).await?
+            command_run(&opts.common, &cmd_opts).await
         }
         Commands::ExportInstanceEnum(ExportInstanceEnum::ExportInstance(cmd_opts)) => {
-            command_export_instance(&opts.common, &cmd_opts).await?
+            command_export_instance(&opts.common, &cmd_opts).await
         }
         Commands::ExportSolutionEnum(ExportSolutionEnum::ExportSolution(cmd_opts)) => {
-            command_export_solution(&opts.common, &cmd_opts).await?
+            command_export_solution(&opts.common, &cmd_opts).await
         }
+        Commands::ImportSolutionEnum(ImportSolutionEnum::ImportSolution(cmd_opts)) => {
+            command_import_solution(&opts.common, &cmd_opts).await
+        }
+    };
+
+    if let Err(e) = result {
+        debug!("Error: {e}");
+        println!("{}: {e}", Style::new().red().bold().apply_to("Error"));
+        std::process::exit(1);
     }
 
     Ok(())

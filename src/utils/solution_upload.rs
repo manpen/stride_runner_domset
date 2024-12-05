@@ -75,7 +75,7 @@ mod test {
     pub fn test_lock<'a>() -> &'a Mutex<()> {
         // default construct on first call
         TEST_LOCK_INIT.call_once(|| unsafe {
-            TEST_LOCK = Some(Mutex::new(Default::default()));
+            TEST_LOCK = Some(Mutex::new(()));
         });
 
         #[allow(static_mut_refs)]

@@ -24,12 +24,17 @@ pub enum RunEnum {
 
 #[derive(StructOpt)]
 pub enum ExportInstanceEnum {
-    ExportInstance(ExportInstanceOpts),
+    ExportInstance(ImportInstanceOpts),
 }
 
 #[derive(StructOpt)]
 pub enum ExportSolutionEnum {
     ExportSolution(ExportSolutionOpts),
+}
+
+#[derive(StructOpt)]
+pub enum ImportSolutionEnum {
+    ImportSolution(ImportSolutionOpts),
 }
 
 #[derive(StructOpt)]
@@ -49,6 +54,9 @@ pub enum Commands {
 
     #[structopt(flatten)]
     ExportSolutionEnum(ExportSolutionEnum),
+
+    #[structopt(flatten)]
+    ImportSolutionEnum(ImportSolutionEnum),
 }
 
 #[derive(StructOpt)]
@@ -224,7 +232,7 @@ pub struct UpdateOpts {
 /////////////////////
 
 #[derive(Debug, StructOpt)]
-pub struct ExportInstanceOpts {
+pub struct ImportInstanceOpts {
     #[structopt(
         short,
         long,
@@ -267,4 +275,19 @@ pub struct ExportSolutionOpts {
 
     #[structopt(short, long, help = "UUID of the run that produced the solution")]
     pub run: Uuid,
+}
+
+////////////
+
+#[derive(Debug, StructOpt)]
+pub struct ImportSolutionOpts {
+    #[structopt(short, long, help = "UUID of solver used to upload the solution")]
+    pub instance: u32,
+
+    #[structopt(
+        short,
+        long,
+        help = "Path to the file where the data should be imported from; if not set, read from stdin"
+    )]
+    pub solution: Option<PathBuf>,
 }

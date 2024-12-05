@@ -6,7 +6,7 @@ use crate::utils::{
     download_progress_bar::DownloadProgressBar, server_connection::ServerConnection,
 };
 
-use super::arguments::{CommonOpts, ExportInstanceOpts, ExportSolutionOpts};
+use super::arguments::{CommonOpts, ExportSolutionOpts, ImportInstanceOpts};
 
 async fn download(
     server_conn: ServerConnection,
@@ -46,7 +46,7 @@ async fn download(
 
 pub async fn command_export_instance(
     common_opts: &CommonOpts,
-    cmd_opts: &ExportInstanceOpts,
+    cmd_opts: &ImportInstanceOpts,
 ) -> anyhow::Result<()> {
     let server_conn = ServerConnection::new_from_opts(common_opts)?;
     let search_path = format!("api/instances/download/{}", cmd_opts.instance);
