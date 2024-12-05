@@ -117,10 +117,97 @@ impl ServerConnection {
 
 #[cfg(test)]
 mod test {
+    use tempdir::TempDir;
+
     use super::*;
+
+    const SOLVER_UUID: &str = "02f17fd6-65a8-442b-b23e-c45709833614";
 
     #[test]
     fn default_server_url_is_valid() {
         Url::parse(super::DEFAULT_SERVER_URL).unwrap();
+    }
+
+    #[tokio::test]
+    async fn connect_to_server() {
+        let conn = ServerConnection::try_default().unwrap();
+        let url = conn.base_url().join("api/status").unwrap();
+        let resp = conn.client_arc().get(url).send().await;
+        assert!(resp.is_ok());
+
+        let text = resp.unwrap().text().await.unwrap();
+        assert!(text.contains("ok"));
+    }
+
+    #[tokio::test]
+    async fn download_file() {
+        let conn = ServerConnection::try_default().unwrap();
+
+        let tmpfile = TempDir::new("download").unwrap();
+        let target = tmpfile.path().join("status.txt");
+
+        let url = conn.base_url().join("api/status").unwrap();
+        conn.download_file(url.path(), target.as_path())
+            .await
+            .unwrap();
+
+        let content = std::fs::read_to_string(target.as_path()).unwrap();
+        assert!(content.contains("ok"));
+    }
+
+    #[tokio::test]
+    async fn download_file_with_updates() {
+        let conn = ServerConnection::try_default().unwrap();
+        let tmpfile = TempDir::new("download").unwrap();
+        let target = tmpfile.path().join("status.txt");
+
+        let url = conn.base_url().join("api/status").unwrap();
+
+        struct Callback {
+            inited: bool,
+            updated: bool,
+        }
+
+        impl DownloadProgressCallback for Callback {
+            fn init(&mut self, _total_size: Option<u64>) {
+                self.inited = true;
+            }
+
+            fn update(&mut self, _state: DownloadProgress) {
+                self.updated = true;
+            }
+        }
+
+        let mut callback = Callback {
+            inited: false,
+            updated: false,
+        };
+
+        conn.download_file_with_updates(url.path(), target.as_path(), &mut callback)
+            .await
+            .unwrap();
+
+        let content = std::fs::read_to_string(target.as_path()).unwrap();
+        assert!(content.contains("ok"));
+
+        assert!(callback.inited);
+        assert!(callback.updated);
+    }
+
+    #[tokio::test]
+    async fn solver_website_for_user() {
+        let conn = ServerConnection::try_default().unwrap();
+        let url = conn.solver_website_for_user(Uuid::parse_str(SOLVER_UUID).unwrap());
+
+        let text = conn
+            .client_arc()
+            .get(url)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(text.contains("Stride"));
     }
 }
