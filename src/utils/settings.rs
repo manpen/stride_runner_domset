@@ -6,7 +6,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::directory::StrideDirectory;
+use super::{directory::StrideDirectory, server_connection::DEFAULT_SERVER_URL};
 
 static mut GLOBAL_SETTINGS: Option<Mutex<Settings>> = None;
 static GLOBAL_SETTINGS_INIT: Once = Once::new();
@@ -37,7 +37,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            server_url: "https://domset.algorithm.engineering".into(),
+            server_url: DEFAULT_SERVER_URL.into(),
             run_log_dir: "stride-logs".into(),
 
             solver_uuid: None,

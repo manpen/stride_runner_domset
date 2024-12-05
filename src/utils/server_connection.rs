@@ -7,6 +7,8 @@ use uuid::Uuid;
 
 use crate::commands::arguments::CommonOpts;
 
+pub const DEFAULT_SERVER_URL: &str = "https://domset.algorithm.engineering";
+
 pub struct ServerConnection {
     client: Arc<Client>,
     base_url: Url,
@@ -30,6 +32,10 @@ impl DownloadProgressCallback for NoOpCallaback {}
 // TODO: Client is internally a Arc; remove the superfluous external
 
 impl ServerConnection {
+    pub fn try_default() -> anyhow::Result<Self> {
+        Self::new(Url::parse(DEFAULT_SERVER_URL).unwrap())
+    }
+
     pub fn new_from_opts(opts: &CommonOpts) -> anyhow::Result<Self> {
         Self::new(opts.server_url().clone())
     }
@@ -106,5 +112,15 @@ impl ServerConnection {
     ) -> anyhow::Result<()> {
         self.download_file_with_updates(url_without_host, to_path, &mut NoOpCallaback())
             .await
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn default_server_url_is_valid() {
+        Url::parse(super::DEFAULT_SERVER_URL).unwrap();
     }
 }

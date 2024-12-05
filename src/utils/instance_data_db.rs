@@ -159,7 +159,6 @@ mod test {
     use super::*;
 
     const PREFIX: &str = "stride-instance-data-db-test";
-    const SERVER: &str = "https://domset.algorithm.engineering";
 
     const REF_IID: IId = IId(1582);
     const REF_DID: DId = DId(1670);
@@ -225,7 +224,7 @@ mod test {
 
     #[tokio::test]
     async fn fetch_from_server() {
-        let server_conn = ServerConnection::new(Url::parse(SERVER).unwrap()).unwrap();
+        let server_conn = ServerConnection::try_default().unwrap();
 
         let tmp_dir = TempDir::new(PREFIX).unwrap();
         let db_path = tmp_dir.path().join("test.db");
@@ -237,7 +236,7 @@ mod test {
 
     #[tokio::test]
     async fn fetch_data_from_db_or_server() {
-        let server_conn = ServerConnection::new(Url::parse(SERVER).unwrap()).unwrap();
+        let server_conn = ServerConnection::try_default().unwrap();
 
         let tmp_dir = TempDir::new(PREFIX).unwrap();
         let db_path = tmp_dir.path().join("test.db");
