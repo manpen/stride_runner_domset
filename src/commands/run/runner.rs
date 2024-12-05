@@ -3,12 +3,12 @@ use std::sync::{
     Arc,
 };
 
-use serde::Serialize;
 use std::time::Duration;
-use tracing::{debug, trace};
+use tracing::trace;
 
 use crate::utils::{
     instance_data_db::{DId, IId},
+    solution_upload::{is_score_good_enough_for_upload, SolutionUploadRequestBuilder},
     solver_executor::{SolverExecutorBuilder, SolverResult},
 };
 
@@ -259,12 +259,7 @@ impl Runner {
         if self.context.cmd_opts().solver_uuid.is_none() {
             let nice_result = match result {
                 SolverResult::Valid { data } => {
-                    if let Some(best_score) = best_score {
-                        let larger_than_score = data.len() as isize - best_score as isize;
-                        (larger_than_score - 5) * 10 < best_score as isize
-                    } else {
-                        true
-                    }
+                    is_score_good_enough_for_upload(data.len() as u32, best_score)
                 }
 
                 _ => false,
@@ -275,47 +270,16 @@ impl Runner {
             }
         }
 
-        #[derive(Debug, Serialize)]
-        struct SolutionUploadRequest<'a> {
-            instance_id: u32,
-            run_uuid: uuid::Uuid,
-            solver_uuid: Option<uuid::Uuid>,
-            seconds_computed: f64,
-            result: &'a SolverResult,
-        }
-
-        let request = SolutionUploadRequest {
-            instance_id: self.iid,
-            run_uuid: self.context.run_uuid(),
-            solver_uuid: self.context.cmd_opts().solver_uuid,
-            seconds_computed: runtime.as_secs_f64(),
-            result,
-        };
-
-        let url = self
-            .context
-            .server_conn()
-            .base_url()
-            .join("api/solutions/new")
+        let request = SolutionUploadRequestBuilder::default()
+            .instance_id(self.iid)
+            .run_uuid(self.context.run_uuid())
+            .solver_uuid(self.context.cmd_opts().solver_uuid)
+            .seconds_computed(runtime.as_secs_f64())
+            .result(result)
+            .build()
             .unwrap();
-        let client = self.context.server_conn().client_arc();
 
-        let resp = client
-            .post(url)
-            .json(&request)
-            .send()
-            .await
-            .expect("Failed to upload solution");
-
-        if !resp.status().is_success() {
-            debug!(
-                "Failed to upload solution for IID {}; response: {:?}",
-                self.iid,
-                resp.text().await
-            );
-            trace!("Request was: {:?}", request);
-            anyhow::bail!("Failed to upload solution");
-        }
+        request.upload(self.context.server_conn()).await?;
 
         Ok(())
     }
