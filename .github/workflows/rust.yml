@@ -14,14 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+
     - name: Build debug
       run: cargo build --verbose
     - name: Build release
       run: cargo build --verbose --release
-    - name: Build examples (need for test) 
-      run: cargo build --examples
-    - name: Run tests
-      run: cargo test
+    
+    - name: Run tools/run_tests.sh
+      run: tools/run_tests.sh
+
     - name: Install musl
       run: sudo apt install -y musl-dev musl-tools
     - name: Build selfcontained binary
