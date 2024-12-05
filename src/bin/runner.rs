@@ -4,7 +4,11 @@ use anyhow::Context;
 use console::Style;
 use stride_runner_domset::{
     commands::{
-        arguments::*, register::command_register, run::command_run, update::command_update,
+        arguments::*,
+        export::{command_export_instance, command_export_solution},
+        register::command_register,
+        run::command_run,
+        update::command_update,
     },
     utils::{directory::StrideDirectory, settings::Settings},
 };
@@ -46,6 +50,12 @@ async fn main() -> anyhow::Result<()> {
             }
 
             command_run(&opts.common, &cmd_opts).await?
+        }
+        Commands::ExportInstanceEnum(ExportInstanceEnum::ExportInstance(cmd_opts)) => {
+            command_export_instance(&opts.common, &cmd_opts).await?
+        }
+        Commands::ExportSolutionEnum(ExportSolutionEnum::ExportSolution(cmd_opts)) => {
+            command_export_solution(&opts.common, &cmd_opts).await?
         }
     }
 

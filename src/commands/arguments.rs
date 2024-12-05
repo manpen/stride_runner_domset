@@ -23,6 +23,16 @@ pub enum RunEnum {
 }
 
 #[derive(StructOpt)]
+pub enum ExportInstanceEnum {
+    ExportInstance(ExportInstanceOpts),
+}
+
+#[derive(StructOpt)]
+pub enum ExportSolutionEnum {
+    ExportSolution(ExportSolutionOpts),
+}
+
+#[derive(StructOpt)]
 #[allow(clippy::enum_variant_names)]
 pub enum Commands {
     #[structopt(flatten)]
@@ -33,6 +43,12 @@ pub enum Commands {
 
     #[structopt(flatten)]
     RunEnum(RunEnum),
+
+    #[structopt(flatten)]
+    ExportInstanceEnum(ExportInstanceEnum),
+
+    #[structopt(flatten)]
+    ExportSolutionEnum(ExportSolutionEnum),
 }
 
 #[derive(StructOpt)]
@@ -202,4 +218,52 @@ pub struct RegisterOpts {
 pub struct UpdateOpts {
     #[structopt(short, long, help = "WARNING: requires more than 10GB of storage")]
     pub all_instances: bool,
+}
+
+/////////////////////
+
+#[derive(Debug, StructOpt)]
+pub struct ExportInstanceOpts {
+    #[structopt(
+        short,
+        long,
+        help = "Instance ID (IID) of the graph/solution to export"
+    )]
+    pub instance: u32,
+
+    #[structopt(
+        short,
+        long,
+        help = "Path to the file where the data should be exported to"
+    )]
+    pub output: PathBuf,
+
+    #[structopt(short, long, help = "Overwrite output file if it already exists")]
+    pub force: bool,
+}
+
+#[derive(Debug, StructOpt)]
+pub struct ExportSolutionOpts {
+    #[structopt(short, long, help = "Overwrite output file if it already exists")]
+    pub force: bool,
+
+    #[structopt(
+        short,
+        long,
+        help = "Instance ID (IID) of the graph/solution to export"
+    )]
+    pub instance: u32,
+
+    #[structopt(
+        short,
+        long,
+        help = "Path to the file where the data should be exported to"
+    )]
+    pub output: PathBuf,
+
+    #[structopt(short, long, help = "UUID of solver used to upload the solution")]
+    pub solver: Uuid,
+
+    #[structopt(short, long, help = "UUID of the run that produced the solution")]
+    pub run: Uuid,
 }
