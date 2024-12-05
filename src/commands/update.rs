@@ -2,6 +2,7 @@ use crate::utils::{
     directory::StrideDirectory,
     server_connection::{DownloadProgress, DownloadProgressCallback, ServerConnection},
 };
+use console::Style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::sync::Arc;
 use tracing::info;
@@ -54,29 +55,33 @@ pub async fn command_update(common_opts: &CommonOpts, cmd_opts: &UpdateOpts) -> 
         DB_PARTIAL_INSTANCES
     };
 
-    let mpb = MultiProgress::new();
-    let mut meta_pb = DownloadProgressBar::new(&mpb, DB_META.into())?;
-    let mut instance_pb = DownloadProgressBar::new(&mpb, instances_name.into())?;
+    {
+        let mpb = MultiProgress::new();
+        let mut meta_pb = DownloadProgressBar::new(&mpb, DB_META.into())?;
+        let mut instance_pb = DownloadProgressBar::new(&mpb, instances_name.into())?;
 
-    let meta_to_path = data_dir.db_meta_file();
-    let meta_server_conn = server_conn.clone();
-    let meta_task = tokio::spawn(async move {
-        meta_server_conn
-            .download_file_with_updates(DB_META, meta_to_path.as_path(), &mut meta_pb)
+        let meta_to_path = data_dir.db_meta_file();
+        let meta_server_conn = server_conn.clone();
+        let meta_task = tokio::spawn(async move {
+            meta_server_conn
+                .download_file_with_updates(DB_META, meta_to_path.as_path(), &mut meta_pb)
+                .await
+                .unwrap();
+        });
+
+        server_conn
+            .download_file_with_updates(
+                instances_name,
+                data_dir.db_instance_file().as_path(),
+                &mut instance_pb,
+            )
             .await
             .unwrap();
-    });
 
-    server_conn
-        .download_file_with_updates(
-            instances_name,
-            data_dir.db_instance_file().as_path(),
-            &mut instance_pb,
-        )
-        .await
-        .unwrap();
+        meta_task.await.unwrap();
+    }
 
-    meta_task.await.unwrap();
+    println!("{}", Style::new().green().apply_to("Update complete."));
 
     Ok(())
 }

@@ -61,7 +61,7 @@ pub async fn command_register(
         style_success.apply_to(new_uuid)
     );
     println!(
-        "Once you recorded a run, you can access the data at: {}",
+        "Once you recorded a run, you can access the data at:\n  {}",
         style_success.apply_to(server_conn.solver_website_for_user(new_uuid).to_string())
     );
 

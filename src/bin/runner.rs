@@ -62,10 +62,10 @@ fn read_and_register_settings() -> anyhow::Result<Settings> {
         let style = Style::new().blue();
         println!(
             "{} {:?}",
-            style.apply_to("Did not detect a config file. Created a template at"),
+            style.apply_to("Did not detect a config file. Created template "),
             path
         );
-        println!("Have a look at it --- it may say you some work later on ;)");
+        println!("Have a look at it --- it may save you some work later on ;)");
 
         let settings = Settings::default();
         settings.store_to_path(path.as_path())?;
