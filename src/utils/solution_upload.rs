@@ -63,9 +63,26 @@ impl SolutionUploadRequest<'_> {
 
 #[cfg(test)]
 mod test {
-    use tracing_test::traced_test;
+    use std::sync::Once;
 
     use super::*;
+    use tokio::sync::Mutex;
+    use tracing_test::traced_test;
+
+    static mut TEST_LOCK: Option<Mutex<()>> = None;
+    static TEST_LOCK_INIT: Once = Once::new();
+
+    pub fn test_lock<'a>() -> &'a Mutex<()> {
+        // default construct on first call
+        TEST_LOCK_INIT.call_once(|| unsafe {
+            TEST_LOCK = Some(Mutex::new(Default::default()));
+        });
+
+        #[allow(static_mut_refs)]
+        unsafe {
+            TEST_LOCK.as_ref().unwrap()
+        }
+    }
 
     const IID: u32 = 549;
     const SOLUTION: [u32; 2] = [19, 70];
@@ -73,6 +90,8 @@ mod test {
     #[tokio::test]
     #[traced_test]
     async fn upload_solution_minimal() {
+        let _guard = test_lock().lock().await;
+
         let solution = SolverResult::Valid {
             data: SOLUTION.into(),
         };
@@ -94,6 +113,8 @@ mod test {
 
     #[tokio::test]
     async fn upload_solution_with_time() {
+        let _guard = test_lock().lock().await;
+
         let solution = SolverResult::Valid {
             data: SOLUTION.into(),
         };
@@ -115,6 +136,8 @@ mod test {
 
     #[tokio::test]
     async fn upload_solution_with_time_and_solver() {
+        let _guard = test_lock().lock().await;
+
         let solution = SolverResult::Valid {
             data: SOLUTION.into(),
         };
