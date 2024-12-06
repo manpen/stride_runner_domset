@@ -144,6 +144,26 @@ impl InstanceDataDB {
 
         Ok(resp.text().await?)
     }
+
+    pub async fn add_from_db_file(&self, other: &Path) -> anyhow::Result<()> {
+        let path = match other.to_str() {
+            Some(path) => path,
+            None => anyhow::bail!("Path is not valid utf-8"),
+        };
+
+        sqlx::query("ATTACH ? AS download")
+            .bind(path)
+            .execute(&self.instance_data_db)
+            .await?;
+
+        sqlx::query("INSERT OR IGNORE INTO InstanceData (did, data) SELECT did, data FROM download.InstanceData").execute(&self.instance_data_db).await?;
+
+        sqlx::query("DETACH download")
+            .execute(&self.instance_data_db)
+            .await?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

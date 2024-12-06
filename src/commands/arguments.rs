@@ -223,10 +223,20 @@ pub struct RegisterOpts {
 
 /////////////////////
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, StructOpt, Clone)]
 pub struct UpdateOpts {
     #[structopt(short, long, help = "WARNING: requires more than 10GB of storage")]
     pub all_instances: bool,
+
+    #[structopt(short = "-m", long, help = "Update only metadata")]
+    pub only_metadata: bool,
+
+    #[structopt(
+        short = "-r",
+        long,
+        help = "By default only add to `instances.db`; use this to replace all data"
+    )]
+    pub replace_all: bool,
 }
 
 /////////////////////
