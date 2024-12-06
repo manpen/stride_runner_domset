@@ -86,6 +86,34 @@ test_import_solution() {
   assert_eq "0" $? "Importing solution from stdin should succeed"
 }
 
+test_update() {
+  echo "Run update test"
+ 
+  rm -f .stride/instances.db stride-runner.log
+  
+  assert_success update -m
+  test -f .stride/instances.db
+  assert_not_eq "0" $? "Update -m should not create instances.db"
+
+  assert_success update
+  test -f .stride/instances.db
+  assert_eq "0" $? "Update should create instances.db"
+
+  assert_success -l debug export-instance -i 1 -o $TESTDIR/1.gr -f
+  grep -q "IId(1) from server" stride-runner.log
+  assert_eq "0" $? "Log should contain 'IId(1) from server'"
+
+  assert_success -l debug export-instance -i 1 -o $TESTDIR/1.gr -f
+  grep -q "IId(1) from server" stride-runner.log
+  assert_not_eq "0" $? "Log should not contain 'IId(1) from server'"
+
+  # this should merge the dbs -> iid 1 should remain in db
+  assert_success update
+
+  assert_success -l debug export-instance -i 1 -o $TESTDIR/1.gr -f
+  grep -q "IId(1) from server" stride-runner.log
+  assert_not_eq "0" $? "Log should not contain 'IId(1) from server'"
+}
 
 #####
 
@@ -100,3 +128,4 @@ run_cargo_test
 test_export_instance
 test_export_solution
 test_import_solution
+test_update
