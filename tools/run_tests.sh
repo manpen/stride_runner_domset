@@ -72,6 +72,19 @@ test_export_solution() {
   assert_eq "3" "$SIZE" "Exported solution should have score 2 and 3 numbers"
 }
 
+test_import_solution() {
+  echo "Run import-solution test"
+  local SOLUTION="$TESTDIR/ref549.sol"
+
+  echo -e "2\n19\n70" > $SOLUTION
+
+  assert_success import-solution -i 549 -s $SOLUTION
+  assert_failed import-solution  -i 85881 -s $SOLUTION # instance does not exist
+  assert_failed import-solution  -i 1 -s $SOLUTION # instance does not exist, but solution is infeasible
+
+  cat $SOLUTION | $BIN import-solution -i 549 > /dev/null 2> /dev/null
+  assert_eq "0" $? "Importing solution from stdin should succeed"
+}
 
 
 #####
@@ -86,3 +99,4 @@ prepare_env
 run_cargo_test
 test_export_instance
 test_export_solution
+test_import_solution
