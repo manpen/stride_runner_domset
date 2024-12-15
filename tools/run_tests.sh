@@ -15,11 +15,13 @@ prepare_env() {
 }
 
 assert_success() {
+  echo " expect success $BIN $@"
   $BIN $@ 2>&1 > /dev/null 2>/dev/null
   assert_eq 0 $? "Command should succeed"
 }
 
 assert_failed() {
+  echo " expect failure $BIN $@"
   $BIN $@ > /dev/null 2>/dev/null
   assert_not_eq 0 $? "Command should fail"
 }
@@ -115,6 +117,15 @@ test_update() {
   assert_not_eq "0" $? "Log should not contain 'IId(1) from server'"
 }
 
+test_arguments_to_subcommand() {
+  echo "Run arguments to subcommand test"
+  SOLVER=target/debug/examples/greedy
+
+  assert_success run -b $SOLVER -w "iid=110" -n
+  assert_failed  run -b $SOLVER -w "iid=110" -n -- --infeasible
+}
+
+
 #####
 
 if [ ! -f Cargo.toml ]; then
@@ -129,3 +140,4 @@ test_export_instance
 test_export_solution
 test_import_solution
 test_update
+test_arguments_to_subcommand
