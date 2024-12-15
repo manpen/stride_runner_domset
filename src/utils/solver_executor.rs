@@ -8,7 +8,7 @@ use tokio::{
     process::{Child, Command},
     time::{timeout, Instant},
 };
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::pace::{graph::Node, instance_reader::PaceReader, Solution};
 
@@ -132,6 +132,11 @@ impl SolverExecutor {
         let stdout = File::create(self.filename(PATH_STDOUT)).with_context(|| "Open STDOUT")?;
         let stderr = File::create(self.filename(PATH_STDERR)).with_context(|| "Open STDERR")?;
 
+        trace!(
+            "Spawn solver {:?} with args {:?}",
+            self.solver_path,
+            &self.args
+        );
         let child = Command::new(&self.solver_path)
             .args(&self.args)
             .envs(self.env.iter().cloned())

@@ -198,6 +198,9 @@ pub struct RunOpts {
         help = "Keep logs of successful runs in `stride-logs` dir (default: only failed runs)"
     )]
     pub keep_logs_on_success: bool,
+
+    #[structopt(skip)]
+    pub solver_args: Vec<String>,
 }
 
 impl RunOpts {

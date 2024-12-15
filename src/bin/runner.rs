@@ -18,10 +18,18 @@ use tracing::debug;
 
 const LOG_FILE: &str = "stride-runner.log";
 
+fn parse_arguments() -> anyhow::Result<(Arguments, Vec<String>)> {
+    let mut arg_iter = std::env::args();
+    let opts = Arguments::from_iter_safe(arg_iter.by_ref().take_while(|arg| arg != "--"))?;
+    let remaining = arg_iter.collect();
+
+    Ok((opts, remaining))
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let settings = read_and_register_settings()?; // must happen BEFORE `Arguments::from_args()` !!!
-    let opts = Arguments::from_args();
+    let (opts, child_args) = parse_arguments()?;
 
     if let Some(level) = opts.common.logging {
         println!("Enabled logging to file {LOG_FILE} with level {level:?}");
@@ -31,6 +39,8 @@ async fn main() -> anyhow::Result<()> {
             .with_writer(Mutex::new(file))
             .init();
     };
+
+    debug!("Parsed arguments with solver args: {child_args:?}");
 
     let result = match opts.cmd {
         Commands::RegisterEnum(RegisterEnum::Register(cmd_opts)) => {
@@ -43,6 +53,8 @@ async fn main() -> anyhow::Result<()> {
             if cmd_opts.solver_binary.to_string_lossy().len() == 0 {
                 anyhow::bail!("Missing solver binary; please set --solver-bin");
             }
+
+            cmd_opts.solver_args = child_args;
 
             if cmd_opts.solver_uuid.is_none() {
                 if let Some(uuid) = &settings.solver_uuid {

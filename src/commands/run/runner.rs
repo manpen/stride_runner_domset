@@ -148,7 +148,7 @@ impl Runner {
         let mut executor = SolverExecutorBuilder::default()
             .solver_path(self.context.cmd_opts().solver_binary.clone())
             .working_dir(workdir)
-            .args(Vec::new())
+            .args(self.context.cmd_opts().solver_args.clone())
             .timeout(self.context.cmd_opts().timeout_duration())
             .grace(self.context.cmd_opts().grace_duration())
             .instance_id(self.iid)
