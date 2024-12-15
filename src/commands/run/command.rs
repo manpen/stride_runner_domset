@@ -43,6 +43,8 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
 
     let mut next_instace = 0;
 
+    let mut report_error_on_exit = false;
+
     while next_instace < context.instance_list().len() || !running_tasks.is_empty() {
         if avail_slots > running_tasks.len() && next_instace < context.instance_list().len() {
             let iid = context.instance_list()[next_instace];
@@ -65,6 +67,15 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
         for (handle, runner, progress_bar, keep) in running_tasks.iter_mut() {
             if handle.is_finished() {
                 let result = handle.await??;
+
+                report_error_on_exit |= match &result {
+                    RunnerResult::Optimal => false,    // found solution
+                    RunnerResult::Incomplete => false, // good kind of lack of success
+                    RunnerResult::Timeout => false,    // good kind of lack of success
+                    RunnerResult::Suboptimal => cmd_opts.suboptimal_is_error,
+                    _ => true,
+                };
+
                 progress_bar.finish(&mut display, result);
                 *keep = false;
             } else {
@@ -85,6 +96,10 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
     }
 
     display.final_message();
+
+    if report_error_on_exit {
+        anyhow::bail!("Some runs failed");
+    }
 
     Ok(())
 }

@@ -105,6 +105,9 @@ Examples:
 # with a timeout of 30s and a grace period of 5s
 ./runner run -i demo.list --timeout 30 --grace 5 --solver-bin ./solver
 
+# execute solver `./solver --foo --bar` with same parameters as before
+./runner run -i demo.list --timeout 30 --grace 5 --solver-bin ./solver -- --foo --bar
+
 # execute solver `./solver` on all instances with 123 nodes
 # with a timeout of 10s and a grace period of 3s
 ./runner run --where "nodes = 123" -T 10 -G 3 --solver-bin ./solver 
