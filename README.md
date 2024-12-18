@@ -153,8 +153,8 @@ The following variables will be set:
 
 
 ### Troubleshooting
-If you assigned a Solver UUID, you investigate your solvers performance on the STRIDE website (link is shown by the runner).
-By clicking on a run, are shown the performance on each instance and sort/filter by criteria such as error modes or solution quality.
+If you assigned a Solver UUID, you can investigate your solvers performance on the STRIDE website (link is shown by the runner).
+By clicking on a run, you are shown the performance on each instance and can sort/filter by criteria, such as error modes or solution quality.
 
 To protect your data (also see below), the runner does not upload logging/debugging information of your solver.
 This is kept only locally on your machine.
