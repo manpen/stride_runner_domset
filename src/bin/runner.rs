@@ -46,7 +46,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::RegisterEnum(RegisterEnum::Register(cmd_opts)) => {
             command_register(&opts.common, &cmd_opts).await
         }
-        Commands::UpdateEnum(UpdateEnum::Update(cmd_opts)) => {
+        Commands::UpdateEnum(UpdateEnum::Update(mut cmd_opts)) => {
+            cmd_opts.update_instance_data |= cmd_opts.replace_all | cmd_opts.all_instances;
             command_update(&opts.common, &cmd_opts).await
         }
         Commands::RunEnum(RunEnum::Run(mut cmd_opts)) => {

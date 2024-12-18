@@ -93,10 +93,6 @@ test_update() {
  
   rm -f .stride/instances.db stride-runner.log
   
-  assert_success update -m
-  test -f .stride/instances.db
-  assert_not_eq "0" $? "Update -m should not create instances.db"
-
   assert_success update
   test -f .stride/instances.db
   assert_eq "0" $? "Update should create instances.db"

@@ -68,10 +68,15 @@ Among others, it contains:
  - `instances.db`: A [SQLite database](https://www.sqlite.org/) of some of the instance data; we initially download all tiny graphs in one block and fetch+cache larger instances on demand.
  - `config.json`: Here, you can enter default values for many command-line arguments to avoid typing (e.g., the Solver UUID, Path to Solver Binary, Timeouts, etc ..). This is the only file you might want to backup; everything else can be retrieved again from the server.
 
-Currently, the `metadata.db` is **not** kept in sync with the server and even your own uploads are not directly reflected in your local copy.
+### Updates
+The `metadata.db` is **not** kept in sync with the server and even your own uploads are not directly reflected in your local copy.
 Thus is makes sense to run `./runner update` from time to time.
-Observe that the server produces database dumps hourly; 
-thus, it may take up to an hour for new information to become available.
+Observe that the server produces database dumps roughly every 10min; thus, it may take a few minutes for new information to become available.
+
+After the initial execution of `./runner update`, every further call will, by default, only update the metadata (< 5MB data transferred).
+If you have good reason, you can pass the `-d`/`--update-instance-data` argument to also update the instance data.
+This is option is almost never helpful, as we will never change existing instance data and only add new instance.
+Those will be automatically fetched by the runner on demand.
 
 ### Executing your solver
 The runner implements the same interface prescribed by [PACE](https://pacechallenge.org/2025/ds/) and [optil.io](https://www.optil.io/optilion/help):

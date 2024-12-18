@@ -27,7 +27,8 @@ pub async fn command_update(common_opts: &CommonOpts, cmd_opts: &UpdateOpts) -> 
     // download meta-data database asynchronously in own tokio task
     let meta_task = tokio::spawn(update_metadata_db(context.clone()));
 
-    if !cmd_opts.only_metadata {
+    // update instance data only if db is missing (typically first run) or user asks for it
+    if !context.stride_dir.db_instance_file().exists() || cmd_opts.update_instance_data {
         update_instance_data_db(context).await?;
     }
 
