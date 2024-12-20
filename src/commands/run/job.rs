@@ -156,12 +156,11 @@ impl Job {
             .await?;
 
         self.update_state(JobState::Starting);
-        let workdir = self.prepare_logdir()?;
         let env = self.prepare_env_variables(&meta);
 
         let mut executor = SolverExecutorBuilder::default()
             .solver_path(self.context.cmd_opts().solver_binary.clone())
-            .working_dir(workdir)
+            .working_dir(self.context.log_dir().to_path_buf())
             .args(self.context.cmd_opts().solver_args.clone())
             .timeout(self.context.cmd_opts().timeout_duration())
             .grace(self.context.cmd_opts().grace_duration())
@@ -211,17 +210,6 @@ impl Job {
     fn update_state(&self, state: JobState) {
         trace!("Runner {} switched into state: {:?}", self.iid, state);
         self.state.store(state, Ordering::Release);
-    }
-
-    fn prepare_logdir(&self) -> anyhow::Result<std::path::PathBuf> {
-        let log_base = &self.context.common_opts().run_log_dir;
-        let timestamp = self.context.start().format("%y%m%d_%H%M%S");
-        let dirname = format!("{}_{}", timestamp, self.context.run_uuid());
-
-        let path = log_base.join(dirname);
-        let _ = std::fs::create_dir_all(&path);
-
-        Ok(path)
     }
 
     fn prepare_env_variables(&self, meta: &InstanceModel) -> Vec<(String, String)> {

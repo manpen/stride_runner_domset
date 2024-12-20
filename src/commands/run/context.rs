@@ -91,6 +91,8 @@ pub struct RunContext {
 
     //db_cache: SqlitePool,
     instances: Vec<u32>,
+
+    log_dir: std::path::PathBuf,
 }
 
 impl RunContext {
@@ -99,12 +101,16 @@ impl RunContext {
         let server_conn = ServerConnection::new_from_opts(&common_opts)?;
         let instance_data_db = InstanceDataDB::new(stride_dir.db_instance_file().as_path()).await?;
 
+        let start = chrono::Local::now();
+        let run_uuid = Uuid::new_v4();
+        let log_dir = Self::prepare_logdir(&common_opts, start, &run_uuid)?;
+
         Ok(Self {
             common_opts,
             cmd_opts,
 
-            start: chrono::Local::now(),
-            run_uuid: Uuid::new_v4(),
+            start,
+            run_uuid,
 
             db_meta: MetaPool(Self::open_db_pool(stride_dir.db_meta_file().as_path()).await?),
             //db_cache: Self::open_db_pool(stride_dir.db_cache_file().as_path()).await?,
@@ -112,7 +118,24 @@ impl RunContext {
             server_conn,
             instance_data_db,
             instances: Vec::new(),
+
+            log_dir,
         })
+    }
+
+    fn prepare_logdir(
+        common_opts: &CommonOpts,
+        start: DateTime<Local>,
+        run_uuid: &Uuid,
+    ) -> anyhow::Result<std::path::PathBuf> {
+        let log_base = &common_opts.run_log_dir;
+        let timestamp = start.format("%y%m%d_%H%M%S");
+        let dirname = format!("{}_{}", timestamp, run_uuid);
+
+        let path = log_base.join(dirname);
+        let _ = std::fs::create_dir_all(&path);
+
+        Ok(path)
     }
 
     #[allow(dead_code)]
@@ -132,6 +155,7 @@ impl RunContext {
         &self.instances
     }
 
+    #[allow(dead_code)]
     pub fn start(&self) -> DateTime<Local> {
         self.start
     }
@@ -146,6 +170,10 @@ impl RunContext {
 
     pub fn instance_data_db(&self) -> &InstanceDataDB {
         &self.instance_data_db
+    }
+
+    pub fn log_dir(&self) -> &Path {
+        &self.log_dir
     }
 
     pub async fn build_instance_list(&mut self) -> anyhow::Result<()> {
