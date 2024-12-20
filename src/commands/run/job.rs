@@ -34,12 +34,10 @@ impl JobResultState {
     }
 }
 
-pub struct TaskResult {
+pub struct JobResult {
     pub state: JobResultState,
     pub runtime: Duration,
 }
-
-
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum JobState {
@@ -135,8 +133,6 @@ impl InstanceModel {
     }
 }
 
-
-
 impl Job {
     pub fn new(context: Arc<RunContext>, iid: u32) -> Self {
         Self {
@@ -146,7 +142,7 @@ impl Job {
         }
     }
 
-    pub async fn main(&self) -> anyhow::Result<TaskResult> {
+    pub async fn main(&self) -> anyhow::Result<JobResult> {
         self.update_state(JobState::Fetching);
         let meta = self.fetch_instance_meta_data().await?;
         let data = self
@@ -197,7 +193,10 @@ impl Job {
 
         self.update_state(JobState::Finished);
 
-        Ok(TaskResult { state: result, runtime })
+        Ok(JobResult {
+            state: result,
+            runtime,
+        })
     }
 
     pub fn state(&self) -> JobState {

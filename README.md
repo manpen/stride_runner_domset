@@ -80,7 +80,7 @@ Those will be automatically fetched by the runner on demand.
 
 ### Executing your solver
 The runner implements the same interface prescribed by [PACE](https://pacechallenge.org/2025/ds/) and [optil.io](https://www.optil.io/optilion/help):
- - You have to provide a solver executable (`-S`/`--solver-bin`)
+ - You have to provide a solver executable (`-b`/`--solver-bin`)
  - It has to read the solution in the [DIMACS format](https://pacechallenge.org/2025/ds/) from STDIN (the first node id is 1)
  - It has to provide the solution via STDOUT (observe that the first non-comment line needs to contain the cardinality of the solution!)
  - You can set a timeout in seconds (`-T`, `--timeout`).

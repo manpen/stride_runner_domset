@@ -1,12 +1,12 @@
 use std::{sync::Arc, time::Duration};
-use tokio::time::Instant;
+use tokio::{task, time::Instant};
 
 use crate::commands::{
     arguments::{CommonOpts, RunOpts},
     run::{
         context::RunContext,
         display::{ProgressDisplay, RunnerProgressBar},
-        job::{Job, TaskResult, JobResultState},
+        job::{Job, JobResult, JobResultState},
     },
 };
 
@@ -37,70 +37,110 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
 
     let avail_slots = cmd_opts.parallel_jobs;
     assert!(avail_slots > 0);
-    let mut running_jobs = Vec::with_capacity(avail_slots);
+    let mut running_jobs: Vec<JobContext> = Vec::with_capacity(avail_slots);
+    let mut instances = context.instance_list();
 
     let mut display = ProgressDisplay::new(context.clone())?;
-
-    let mut next_instace = 0;
-
     let mut report_error_on_exit = false;
 
-    while next_instace < context.instance_list().len() || !running_jobs.is_empty() {
-        if avail_slots > running_jobs.len() && next_instace < context.instance_list().len() {
-            let iid = context.instance_list()[next_instace];
-            next_instace += 1;
-
-            let job = Arc::new(Job::new(context.clone(), iid));
-            let job_task_handle: tokio::task::JoinHandle<Result<TaskResult, anyhow::Error>> = {
-                let job_task = job.clone();
-                tokio::spawn(async move { job_task.main().await })
-            };
-
-            running_jobs.push((
-                job_task_handle,
-                job,
-                RunnerProgressBar::new(context.clone(), iid),
-                true,
-            ));
-        }
-
-        let now = Instant::now();
-        for (handle, runner, progress_bar, keep) in running_jobs.iter_mut() {
-            if handle.is_finished() {
-                let main_result = handle.await??;
-
-                report_error_on_exit |= match main_result.state {
-                    JobResultState::Optimal { .. } => false, // found solution
-                    JobResultState::Incomplete => false,     // good kind of lack of success
-                    JobResultState::Timeout => false,        // good kind of lack of success
-                    JobResultState::Suboptimal { .. } => cmd_opts.suboptimal_is_error,
-                    _ => true,
-                };
-
-                progress_bar.finish(&mut display, main_result.state);
-                *keep = false;
-            } else {
-                progress_bar.update_progress_bar(&display, runner, now);
+    while !(instances.is_empty() && running_jobs.is_empty()) {
+        // attempt to spawn new tasks if there are available slots
+        if avail_slots > running_jobs.len() {
+            if let Some((iid, rest)) = instances.split_first() {
+                instances = rest;
+                running_jobs.push(JobContext::new(context.clone(), *iid));
             }
         }
 
-        running_jobs.retain_mut(|x| x.3);
+        // poll all running tasks to see if they are finished
+        // need for-loop rather than `running_jobs.drain(..)` as poll is fallible async fn
+        for job_context in running_jobs.iter_mut() {
+            let success = job_context.poll(&mut display).await?;
+            report_error_on_exit |= success == JobSuccess::ReportAsFailure;
+        }
+
+        // remove finished tasks from list
+        running_jobs.retain_mut(|job| !job.is_finished());
 
         display.tick(running_jobs.len());
-
-        tokio::time::sleep(if avail_slots > running_jobs.len() {
+        let wait_for = if avail_slots > running_jobs.len() {
             SHORT_WAIT_TIME
         } else {
             DEFAULT_WAIT_TIME
-        })
-        .await;
+        };
+
+        tokio::time::sleep(wait_for).await;
     }
 
     display.final_message();
-
     if report_error_on_exit {
         anyhow::bail!("Some runs failed");
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JobSuccess {
+    ReportAsFailure,
+    ReportAsSuccess,
+}
+
+struct JobContext {
+    run: Arc<RunContext>,
+    job: Arc<Job>,
+    task_handle: Option<tokio::task::JoinHandle<Result<JobResult, anyhow::Error>>>,
+    progress_bar: RunnerProgressBar,
+    is_finished: bool,
+}
+
+impl JobContext {
+    fn new(run: Arc<RunContext>, iid: u32) -> Self {
+        let job = Arc::new(Job::new(run.clone(), iid));
+
+        let task_handle = {
+            let job_task = job.clone();
+            tokio::spawn(async move { job_task.main().await })
+        };
+
+        let progress_bar = RunnerProgressBar::new(run.clone(), iid);
+
+        Self {
+            run,
+            job,
+            task_handle: Some(task_handle),
+            progress_bar,
+            is_finished: false,
+        }
+    }
+
+    async fn poll(&mut self, display: &mut ProgressDisplay) -> anyhow::Result<JobSuccess> {
+        while !self.task_handle.as_ref().unwrap().is_finished() {
+            self.progress_bar
+                .update_progress_bar(display, &self.job, Instant::now());
+
+            task::yield_now().await;
+        }
+
+        let result = self.task_handle.take().unwrap().await??;
+
+        let report_error_on_exit = match result.state {
+            JobResultState::Optimal { .. } => JobSuccess::ReportAsSuccess, // found solution
+            JobResultState::Incomplete => JobSuccess::ReportAsSuccess, // good kind of lack of success
+            JobResultState::Timeout => JobSuccess::ReportAsSuccess, // good kind of lack of success
+            JobResultState::Suboptimal { .. } if !self.run.cmd_opts().suboptimal_is_error => {
+                JobSuccess::ReportAsSuccess
+            }
+            _ => JobSuccess::ReportAsFailure,
+        };
+
+        self.progress_bar.finish(display, result.state);
+        self.is_finished = true;
+
+        Ok(report_error_on_exit)
+    }
+
+    fn is_finished(&self) -> bool {
+        self.task_handle.is_none()
+    }
 }
