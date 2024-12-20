@@ -31,13 +31,17 @@ This small tool allows you to run your solver on a predefined sets of instances:
 ### Additional Opt-In: Tracking your solution
 ![Screenshot: Overview of Runs](docs/web-runs.png)
 
-As an added bonus you can "register" (see below) your solver --- which simply assigns a random UUID (v4) to your uploads.
+As an added bonus you can anonymously "register" (see below) your solver --- which simply assigns a random UUID (v4) to your uploads.
 In this mode, the runner will link all your uploads to this UUID and also upload some metadata (runtime, score, validity of solution) for failed runs.
-You can then visualize and track the performance of your via a website.
+You can then visualize and track the performance of your via our website.
 
 ## Getting the Runner
-We currently support only Linux and plan to offer limited support to OSX (no Macs here ...). 
-Any help is welcomed -- please file a pull request. 
+We currently support only Linux and plan to offer limited support to OSX. 
+Since the runner relies on unix signals (SIGTERM / SIGKILL) to communicate with a solver in accordance with the [optil.io](https://www.optil.io/optilion/help) rules, we are unaware of a mechanism to port the runner to MS Windows.
+If you are developing under Windows consider using the [Windows Subsystem For Linux](https://learn.microsoft.com/en-us/windows/wsl/install).
+As an added benefit, your solution will be automatically compatible with optil.io.
+In case you are aware of a better solution, please let us know.
+Any help is welcomed -- please file an issue or, even better, a pull request. 
 
 ### Getting a binary (Linux only)
 As soon, as the code reaches a certain maturity, we will offer a binary release. 
@@ -70,7 +74,7 @@ Among others, it contains:
 
 ### Updates
 The `metadata.db` is **not** kept in sync with the server and even your own uploads are not directly reflected in your local copy.
-Thus is makes sense to run `./runner update` from time to time.
+Thus it makes sense to run `./runner update` from time to time.
 Observe that the server produces database dumps roughly every 10min; thus, it may take a few minutes for new information to become available.
 
 After the initial execution of `./runner update`, every further call will, by default, only update the metadata (< 5MB data transferred).
@@ -151,7 +155,6 @@ The following variables will be set:
 | `STRIDE_TREEWIDTH`  | if available   | unsigned int |
 | `STRIDE_PLANAR`     | if available   | false, true  |
 
-
 ### Troubleshooting
 If you assigned a Solver UUID, you can investigate your solvers performance on the STRIDE website (link is shown by the runner).
 By clicking on a run, you are shown the performance on each instance and can sort/filter by criteria, such as error modes or solution quality.
@@ -176,10 +179,30 @@ In case the runner itself misbehaves, it might help to enable logging by passing
 ./runner --loggin trace run -i demo.list -k
 ```
 
+### Run Summary
+The runner will also create the file `summary.csv` within its logging directory `stride-logs/{DATE}_{TIME}_{RUN-UUID}`.
+The first line of the CSV file contains the column headers, each following line contains the summary of a job. 
+
+For instance, the following summary contains a single job (instance iid 110) which was solved in roughly 2ms yielding an suboptimal solution of cardinality 8 while the current best known solution has cardinality 7:
+
+```csv
+iid,time_sec,state,score,best_score_known
+110,0.002624989,suboptimal,8,7
+```
+
+The state column may take the following values:
+ - `best`: a feasible solution where no better solution is known
+ - `suboptimal`: a feasible solution where a smaller solution is known
+ - `infeasible`: a syntactically correct solution that is not a valid dominating set
+ - `incomplete`: no solution was provided / a partial solution was provided which had fewer nodes that indicated in the first line.
+   This could be due to an too slow output routine.
+ - `error`: the runner terminated with a non zero exit code or, in very rare cases, the runner encountered an internal error
+ - `timeout`: the solver did not terminate within the grace period
+
 ## Data protection
-**We are not interested in your personal data** and designed the whole system in good faith to collect as little data as possible:
+**We are not interested in your personal data** and designed the whole system in good faith to collect as little data as possible while still achieving the goals:
 - Your solver never leaves your machine
-- The runner only uploads normalized solutions (sorted without comments) and metadata, such as runtime, error codes and solution scores
+- The runner only uploads normalized solutions (sorted and without comments) and metadata, such as runtime, error codes and solution scores
 - There is **no registration** process where we ask for your name, mail, or affiliation.
   If you want to track your solutions over time, you can **opt-in** by selecting a random *Solver UUID*.
   This UUID is the only identification:

@@ -29,7 +29,7 @@ impl RunSummaryLogger {
         use crate::commands::run::job::JobResultState::*;
 
         let (score, best_known) = match summary.state {
-            Optimal { score } => (Some(score), Some(score)),
+            BestKnown { score } => (Some(score), Some(score)),
             Suboptimal { score, best_known } => (Some(score), Some(best_known)),
             _ => (None, None),
         };
@@ -72,7 +72,7 @@ mod test {
 
         {
             let job_result = JobResult {
-                state: JobResultState::Optimal { score: 42 },
+                state: JobResultState::BestKnown { score: 42 },
                 runtime: std::time::Duration::from_secs(1),
             };
             logger.log_job_result(1, &job_result).await.unwrap();
@@ -100,7 +100,7 @@ mod test {
         let content = tokio::fs::read_to_string(&path).await.unwrap();
         assert_eq!(
             content,
-            "iid,time_sec,state,score,best_score_known\n1,1,optimal,42,42\n2,4,suboptimal,1337,1024\n3,2,error,,\n"
+            "iid,time_sec,state,score,best_score_known\n1,1,best,42,42\n2,4,suboptimal,1337,1024\n3,2,error,,\n"
         );
     }
 }

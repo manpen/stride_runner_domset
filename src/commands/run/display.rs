@@ -137,7 +137,7 @@ impl ProgressDisplay {
         self.pb_total.inc(1);
 
         match status {
-            JobResultState::Optimal { .. } => self.num_optimal += 1,
+            JobResultState::BestKnown { .. } => self.num_optimal += 1,
             JobResultState::Suboptimal { .. } => self.num_suboptimal += 1,
             JobResultState::Infeasible => self.num_infeasible += 1,
             JobResultState::Error => self.num_error += 1,

@@ -19,7 +19,7 @@ use super::context::{MetaPool, RunContext};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobResultState {
-    Optimal { score: u32 },
+    BestKnown { score: u32 },
     Suboptimal { score: u32, best_known: u32 },
     Infeasible,
     Incomplete,
@@ -30,7 +30,7 @@ pub enum JobResultState {
 impl Display for JobResultState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::Optimal { .. } => "optimal",
+            Self::BestKnown { .. } => "best",
             Self::Suboptimal { .. } => "suboptimal",
             Self::Infeasible => "infeasible",
             Self::Incomplete => "incomplete",
@@ -42,7 +42,7 @@ impl Display for JobResultState {
 
 impl JobResultState {
     pub fn is_optimal(&self) -> bool {
-        matches!(self, Self::Optimal { .. })
+        matches!(self, Self::BestKnown { .. })
     }
 
     pub fn is_suboptimal(&self) -> bool {
@@ -315,7 +315,7 @@ impl Job {
                     .map_or(0, |x| data.len() as isize - x as isize);
 
                 if larger_than_best <= 0 {
-                    JobResultState::Optimal {
+                    JobResultState::BestKnown {
                         score: data.len() as u32,
                     }
                 } else {

@@ -135,7 +135,7 @@ impl JobContext {
         let result = self.task_handle.take().unwrap().await??;
 
         let report_error_on_exit = match result.state {
-            JobResultState::Optimal { .. } => JobSuccess::ReportAsSuccess, // found solution
+            JobResultState::BestKnown { .. } => JobSuccess::ReportAsSuccess, // found solution
             JobResultState::Incomplete => JobSuccess::ReportAsSuccess, // good kind of lack of success
             JobResultState::Timeout => JobSuccess::ReportAsSuccess, // good kind of lack of success
             JobResultState::Suboptimal { .. } if !self.run.cmd_opts().suboptimal_is_error => {
