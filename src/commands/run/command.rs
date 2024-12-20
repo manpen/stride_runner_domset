@@ -6,7 +6,7 @@ use crate::commands::{
     run::{
         context::RunContext,
         display::{ProgressDisplay, RunnerProgressBar},
-        runner::{Runner, RunnerResult},
+        runner::{Runner, RunnerMainResult, RunnerResult},
     },
 };
 
@@ -51,7 +51,7 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
             next_instace += 1;
 
             let runner = Arc::new(Runner::new(context.clone(), iid));
-            let handle: tokio::task::JoinHandle<Result<RunnerResult, anyhow::Error>> = {
+            let handle: tokio::task::JoinHandle<Result<RunnerMainResult, anyhow::Error>> = {
                 let runner = runner.clone();
                 tokio::spawn(async move { runner.main().await })
             };
@@ -66,17 +66,17 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
         let now = Instant::now();
         for (handle, runner, progress_bar, keep) in running_tasks.iter_mut() {
             if handle.is_finished() {
-                let result = handle.await??;
+                let main_result = handle.await??;
 
-                report_error_on_exit |= match &result {
-                    RunnerResult::Optimal => false,    // found solution
-                    RunnerResult::Incomplete => false, // good kind of lack of success
-                    RunnerResult::Timeout => false,    // good kind of lack of success
-                    RunnerResult::Suboptimal => cmd_opts.suboptimal_is_error,
+                report_error_on_exit |= match main_result.result {
+                    RunnerResult::Optimal { .. } => false, // found solution
+                    RunnerResult::Incomplete => false,     // good kind of lack of success
+                    RunnerResult::Timeout => false,        // good kind of lack of success
+                    RunnerResult::Suboptimal { .. } => cmd_opts.suboptimal_is_error,
                     _ => true,
                 };
 
-                progress_bar.finish(&mut display, result);
+                progress_bar.finish(&mut display, main_result.result);
                 *keep = false;
             } else {
                 progress_bar.update_progress_bar(&display, runner, now);

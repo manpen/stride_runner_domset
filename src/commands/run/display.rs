@@ -137,8 +137,8 @@ impl ProgressDisplay {
         self.pb_total.inc(1);
 
         match status {
-            RunnerResult::Optimal => self.num_optimal += 1,
-            RunnerResult::Suboptimal => self.num_suboptimal += 1,
+            RunnerResult::Optimal { .. } => self.num_optimal += 1,
+            RunnerResult::Suboptimal { .. } => self.num_suboptimal += 1,
             RunnerResult::Infeasible => self.num_infeasible += 1,
             RunnerResult::Error => self.num_error += 1,
             RunnerResult::Timeout => self.num_timeout += 1,

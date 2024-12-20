@@ -16,12 +16,22 @@ use super::context::{MetaPool, RunContext};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerResult {
-    Optimal,
-    Suboptimal,
+    Optimal { score: u32 },
+    Suboptimal { score: u32, best_known: u32 },
     Infeasible,
     Incomplete,
     Error,
     Timeout,
+}
+
+impl RunnerResult {
+    pub fn is_optimal(&self) -> bool {
+        matches!(self, Self::Optimal { .. })
+    }
+
+    pub fn is_suboptimal(&self) -> bool {
+        matches!(self, Self::Suboptimal { .. })
+    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
@@ -118,6 +128,11 @@ impl InstanceModel {
     }
 }
 
+pub struct RunnerMainResult {
+    pub result: RunnerResult,
+    pub runtime: Duration,
+}
+
 impl Runner {
     pub fn new(context: Arc<RunContext>, iid: u32) -> Self {
         Self {
@@ -127,7 +142,7 @@ impl Runner {
         }
     }
 
-    pub async fn main(&self) -> anyhow::Result<RunnerResult> {
+    pub async fn main(&self) -> anyhow::Result<RunnerMainResult> {
         self.update_state(RunnerState::Fetching);
         let meta = self.fetch_instance_meta_data().await?;
         let data = self
@@ -144,7 +159,6 @@ impl Runner {
         let workdir = self.prepare_logdir()?;
         let env = self.prepare_env_variables(&meta);
 
-        // TODO: allow passing of solver arguments
         let mut executor = SolverExecutorBuilder::default()
             .solver_path(self.context.cmd_opts().solver_binary.clone())
             .working_dir(workdir)
@@ -162,14 +176,15 @@ impl Runner {
 
         self.update_state(RunnerState::PostProcessing);
 
-        self.upload_results(&result, meta.best_score, executor.runtime().unwrap())
+        let runtime = executor.runtime().unwrap();
+
+        self.upload_results(&result, meta.best_score, runtime)
             .await?;
         let result = self.to_result_type(&result, &meta);
 
         if !self.context.cmd_opts().keep_logs_on_success {
-            let successful = result == RunnerResult::Optimal
-                || (result == RunnerResult::Suboptimal
-                    && !self.context.cmd_opts().suboptimal_is_error);
+            let successful = result.is_optimal()
+                || (result.is_suboptimal() && !self.context.cmd_opts().suboptimal_is_error);
 
             if successful {
                 executor.delete_files()?;
@@ -178,7 +193,7 @@ impl Runner {
 
         self.update_state(RunnerState::Finished);
 
-        Ok(result)
+        Ok(RunnerMainResult { result, runtime })
     }
 
     pub fn state(&self) -> RunnerState {
@@ -293,9 +308,14 @@ impl Runner {
                     .map_or(0, |x| data.len() as isize - x as isize);
 
                 if larger_than_best <= 0 {
-                    RunnerResult::Optimal
+                    RunnerResult::Optimal {
+                        score: data.len() as u32,
+                    }
                 } else {
-                    RunnerResult::Suboptimal
+                    RunnerResult::Suboptimal {
+                        score: data.len() as u32,
+                        best_known: meta.best_score.unwrap(), // cannot fail since larger_than_best > 0
+                    }
                 }
             }
             SolverResult::ValidCached => unreachable!(),

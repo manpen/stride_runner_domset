@@ -23,6 +23,15 @@ pub enum SolverResult {
     IncompleteOutput,
 }
 
+impl SolverResult {
+    pub fn score(&self) -> Option<u32> {
+        match self {
+            SolverResult::Valid { data } => Some(data.len() as u32),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Builder)]
 pub struct SolverExecutor {
     working_dir: PathBuf,
