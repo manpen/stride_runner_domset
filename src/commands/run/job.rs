@@ -15,7 +15,7 @@ use crate::utils::{
 use super::context::{MetaPool, RunContext};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RunnerResult {
+pub enum JobResultState {
     Optimal { score: u32 },
     Suboptimal { score: u32, best_known: u32 },
     Infeasible,
@@ -24,7 +24,7 @@ pub enum RunnerResult {
     Timeout,
 }
 
-impl RunnerResult {
+impl JobResultState {
     pub fn is_optimal(&self) -> bool {
         matches!(self, Self::Optimal { .. })
     }
@@ -34,8 +34,15 @@ impl RunnerResult {
     }
 }
 
+pub struct TaskResult {
+    pub state: JobResultState,
+    pub runtime: Duration,
+}
+
+
+
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum RunnerState {
+pub enum JobState {
     Idle = 0,
     Fetching = 1,
     Starting = 2,
@@ -44,38 +51,38 @@ pub enum RunnerState {
     Finished = 5,
 }
 
-struct AtomicRunnerState {
+struct AtomicJobState {
     state: AtomicU8,
 }
 
-impl AtomicRunnerState {
-    fn new(state: RunnerState) -> Self {
+impl AtomicJobState {
+    fn new(state: JobState) -> Self {
         Self {
             state: AtomicU8::new(state as u8),
         }
     }
 
-    fn load(&self, order: Ordering) -> RunnerState {
+    fn load(&self, order: Ordering) -> JobState {
         match self.state.load(order) {
-            x if x == RunnerState::Idle as u8 => RunnerState::Idle,
-            x if x == RunnerState::Fetching as u8 => RunnerState::Fetching,
-            x if x == RunnerState::Starting as u8 => RunnerState::Starting,
-            x if x == RunnerState::Running as u8 => RunnerState::Running,
-            x if x == RunnerState::PostProcessing as u8 => RunnerState::PostProcessing,
-            x if x == RunnerState::Finished as u8 => RunnerState::Finished,
+            x if x == JobState::Idle as u8 => JobState::Idle,
+            x if x == JobState::Fetching as u8 => JobState::Fetching,
+            x if x == JobState::Starting as u8 => JobState::Starting,
+            x if x == JobState::Running as u8 => JobState::Running,
+            x if x == JobState::PostProcessing as u8 => JobState::PostProcessing,
+            x if x == JobState::Finished as u8 => JobState::Finished,
             _ => unreachable!(),
         }
     }
 
-    fn store(&self, state: RunnerState, order: Ordering) {
+    fn store(&self, state: JobState, order: Ordering) {
         self.state.store(state as u8, order);
     }
 }
 
-pub struct Runner {
+pub struct Job {
     context: Arc<RunContext>,
     iid: u32,
-    state: AtomicRunnerState,
+    state: AtomicJobState,
 }
 
 #[derive(Default, Debug, sqlx::FromRow)]
@@ -128,22 +135,19 @@ impl InstanceModel {
     }
 }
 
-pub struct RunnerMainResult {
-    pub result: RunnerResult,
-    pub runtime: Duration,
-}
 
-impl Runner {
+
+impl Job {
     pub fn new(context: Arc<RunContext>, iid: u32) -> Self {
         Self {
             context,
             iid,
-            state: AtomicRunnerState::new(RunnerState::Idle),
+            state: AtomicJobState::new(JobState::Idle),
         }
     }
 
-    pub async fn main(&self) -> anyhow::Result<RunnerMainResult> {
-        self.update_state(RunnerState::Fetching);
+    pub async fn main(&self) -> anyhow::Result<TaskResult> {
+        self.update_state(JobState::Fetching);
         let meta = self.fetch_instance_meta_data().await?;
         let data = self
             .context
@@ -155,7 +159,7 @@ impl Runner {
             )
             .await?;
 
-        self.update_state(RunnerState::Starting);
+        self.update_state(JobState::Starting);
         let workdir = self.prepare_logdir()?;
         let env = self.prepare_env_variables(&meta);
 
@@ -171,10 +175,10 @@ impl Runner {
             .build()
             .unwrap();
 
-        self.update_state(RunnerState::Running);
+        self.update_state(JobState::Running);
         let result = executor.run().await?;
 
-        self.update_state(RunnerState::PostProcessing);
+        self.update_state(JobState::PostProcessing);
 
         let runtime = executor.runtime().unwrap();
 
@@ -191,12 +195,12 @@ impl Runner {
             }
         }
 
-        self.update_state(RunnerState::Finished);
+        self.update_state(JobState::Finished);
 
-        Ok(RunnerMainResult { result, runtime })
+        Ok(TaskResult { state: result, runtime })
     }
 
-    pub fn state(&self) -> RunnerState {
+    pub fn state(&self) -> JobState {
         self.state.load(Ordering::Acquire)
     }
 
@@ -205,7 +209,7 @@ impl Runner {
         self.iid
     }
 
-    fn update_state(&self, state: RunnerState) {
+    fn update_state(&self, state: JobState) {
         trace!("Runner {} switched into state: {:?}", self.iid, state);
         self.state.store(state, Ordering::Release);
     }
@@ -299,7 +303,7 @@ impl Runner {
         Ok(())
     }
 
-    fn to_result_type(&self, result: &SolverResult, meta: &InstanceModel) -> RunnerResult {
+    fn to_result_type(&self, result: &SolverResult, meta: &InstanceModel) -> JobResultState {
         match &result {
             // at this point, we have a valid solution
             SolverResult::Valid { data } => {
@@ -308,21 +312,21 @@ impl Runner {
                     .map_or(0, |x| data.len() as isize - x as isize);
 
                 if larger_than_best <= 0 {
-                    RunnerResult::Optimal {
+                    JobResultState::Optimal {
                         score: data.len() as u32,
                     }
                 } else {
-                    RunnerResult::Suboptimal {
+                    JobResultState::Suboptimal {
                         score: data.len() as u32,
                         best_known: meta.best_score.unwrap(), // cannot fail since larger_than_best > 0
                     }
                 }
             }
             SolverResult::ValidCached => unreachable!(),
-            SolverResult::Infeasible => RunnerResult::Infeasible,
-            SolverResult::SyntaxError => RunnerResult::Error,
-            SolverResult::Timeout => RunnerResult::Timeout,
-            SolverResult::IncompleteOutput => RunnerResult::Incomplete,
+            SolverResult::Infeasible => JobResultState::Infeasible,
+            SolverResult::SyntaxError => JobResultState::Error,
+            SolverResult::Timeout => JobResultState::Timeout,
+            SolverResult::IncompleteOutput => JobResultState::Incomplete,
         }
     }
 }

@@ -6,7 +6,7 @@ use crate::commands::{
     run::{
         context::RunContext,
         display::{ProgressDisplay, RunnerProgressBar},
-        runner::{Runner, RunnerMainResult, RunnerResult},
+        job::{Job, TaskResult, JobResultState},
     },
 };
 
@@ -37,7 +37,7 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
 
     let avail_slots = cmd_opts.parallel_jobs;
     assert!(avail_slots > 0);
-    let mut running_tasks = Vec::with_capacity(avail_slots);
+    let mut running_jobs = Vec::with_capacity(avail_slots);
 
     let mut display = ProgressDisplay::new(context.clone())?;
 
@@ -45,49 +45,50 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
 
     let mut report_error_on_exit = false;
 
-    while next_instace < context.instance_list().len() || !running_tasks.is_empty() {
-        if avail_slots > running_tasks.len() && next_instace < context.instance_list().len() {
+    while next_instace < context.instance_list().len() || !running_jobs.is_empty() {
+        if avail_slots > running_jobs.len() && next_instace < context.instance_list().len() {
             let iid = context.instance_list()[next_instace];
             next_instace += 1;
 
-            let runner = Arc::new(Runner::new(context.clone(), iid));
-            let handle: tokio::task::JoinHandle<Result<RunnerMainResult, anyhow::Error>> = {
-                let runner = runner.clone();
-                tokio::spawn(async move { runner.main().await })
+            let job = Arc::new(Job::new(context.clone(), iid));
+            let job_task_handle: tokio::task::JoinHandle<Result<TaskResult, anyhow::Error>> = {
+                let job_task = job.clone();
+                tokio::spawn(async move { job_task.main().await })
             };
-            running_tasks.push((
-                handle,
-                runner,
+
+            running_jobs.push((
+                job_task_handle,
+                job,
                 RunnerProgressBar::new(context.clone(), iid),
                 true,
             ));
         }
 
         let now = Instant::now();
-        for (handle, runner, progress_bar, keep) in running_tasks.iter_mut() {
+        for (handle, runner, progress_bar, keep) in running_jobs.iter_mut() {
             if handle.is_finished() {
                 let main_result = handle.await??;
 
-                report_error_on_exit |= match main_result.result {
-                    RunnerResult::Optimal { .. } => false, // found solution
-                    RunnerResult::Incomplete => false,     // good kind of lack of success
-                    RunnerResult::Timeout => false,        // good kind of lack of success
-                    RunnerResult::Suboptimal { .. } => cmd_opts.suboptimal_is_error,
+                report_error_on_exit |= match main_result.state {
+                    JobResultState::Optimal { .. } => false, // found solution
+                    JobResultState::Incomplete => false,     // good kind of lack of success
+                    JobResultState::Timeout => false,        // good kind of lack of success
+                    JobResultState::Suboptimal { .. } => cmd_opts.suboptimal_is_error,
                     _ => true,
                 };
 
-                progress_bar.finish(&mut display, main_result.result);
+                progress_bar.finish(&mut display, main_result.state);
                 *keep = false;
             } else {
                 progress_bar.update_progress_bar(&display, runner, now);
             }
         }
 
-        running_tasks.retain_mut(|x| x.3);
+        running_jobs.retain_mut(|x| x.3);
 
-        display.tick(running_tasks.len());
+        display.tick(running_jobs.len());
 
-        tokio::time::sleep(if avail_slots > running_tasks.len() {
+        tokio::time::sleep(if avail_slots > running_jobs.len() {
             SHORT_WAIT_TIME
         } else {
             DEFAULT_WAIT_TIME

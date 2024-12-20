@@ -6,7 +6,7 @@ use tokio::time::Instant;
 
 use super::{
     context::RunContext,
-    runner::{Runner, RunnerResult, RunnerState},
+    job::{Job, JobResultState, JobState},
 };
 
 pub struct ProgressDisplay {
@@ -133,16 +133,16 @@ impl ProgressDisplay {
         self.status_line.set_message(parts.join(" | "));
     }
 
-    pub fn finish_job(&mut self, _iid: u32, status: RunnerResult) {
+    pub fn finish_job(&mut self, _iid: u32, status: JobResultState) {
         self.pb_total.inc(1);
 
         match status {
-            RunnerResult::Optimal { .. } => self.num_optimal += 1,
-            RunnerResult::Suboptimal { .. } => self.num_suboptimal += 1,
-            RunnerResult::Infeasible => self.num_infeasible += 1,
-            RunnerResult::Error => self.num_error += 1,
-            RunnerResult::Timeout => self.num_timeout += 1,
-            RunnerResult::Incomplete => self.num_incomplete += 1,
+            JobResultState::Optimal { .. } => self.num_optimal += 1,
+            JobResultState::Suboptimal { .. } => self.num_suboptimal += 1,
+            JobResultState::Infeasible => self.num_infeasible += 1,
+            JobResultState::Error => self.num_error += 1,
+            JobResultState::Timeout => self.num_timeout += 1,
+            JobResultState::Incomplete => self.num_incomplete += 1,
         }
     }
 
@@ -156,7 +156,7 @@ pub struct RunnerProgressBar {
     context: Arc<RunContext>,
     iid: u32,
     pb: Option<ProgressBar>,
-    previous_state: Option<RunnerState>,
+    previous_state: Option<JobState>,
     start: tokio::time::Instant,
     max_time_millis: u64,
 }
@@ -176,7 +176,7 @@ impl RunnerProgressBar {
         }
     }
 
-    pub fn update_progress_bar(&mut self, mpb: &ProgressDisplay, runner: &Runner, now: Instant) {
+    pub fn update_progress_bar(&mut self, mpb: &ProgressDisplay, runner: &Job, now: Instant) {
         let elapsed = (now.duration_since(self.start).as_millis() as u64).min(self.max_time_millis);
         if elapsed < Self::MILLIS_BEFORE_PROGRESS_BAR {
             return; // do not create a progress bar for short running tasks
@@ -194,7 +194,7 @@ impl RunnerProgressBar {
             self.start = now;
             self.pb.as_ref().unwrap().reset_elapsed();
 
-            if runner_state == RunnerState::Running {
+            if runner_state == JobState::Running {
                 self.style_for_running(pb);
             } else {
                 self.style_for_waiting(pb);
@@ -202,25 +202,25 @@ impl RunnerProgressBar {
         }
 
         let message: String = match runner.state() {
-            RunnerState::Idle => "startup".into(),
-            RunnerState::Fetching => "fetching data".into(),
-            RunnerState::Starting => "starting".into(),
-            RunnerState::Running => {
+            JobState::Idle => "startup".into(),
+            JobState::Fetching => "fetching data".into(),
+            JobState::Starting => "starting".into(),
+            JobState::Running => {
                 if 1 > self.context.cmd_opts().timeout * 1000 {
                     Style::new().red().apply_to("grace").to_string()
                 } else {
                     "running".into()
                 }
             }
-            RunnerState::PostProcessing => "post-processing / upload".into(),
-            RunnerState::Finished => "done".into(),
+            JobState::PostProcessing => "post-processing / upload".into(),
+            JobState::Finished => "done".into(),
         };
 
         pb.set_message(message);
         pb.set_position(elapsed);
     }
 
-    pub fn finish(&self, display: &mut ProgressDisplay, status: RunnerResult) {
+    pub fn finish(&self, display: &mut ProgressDisplay, status: JobResultState) {
         if let Some(pb) = &self.pb {
             display.multi_progress().remove(pb);
         }
