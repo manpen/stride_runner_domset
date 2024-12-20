@@ -1,13 +1,16 @@
 use std::{sync::Arc, time::Duration};
 use tokio::{task, time::Instant};
 
-use crate::commands::{
-    arguments::{CommonOpts, RunOpts},
-    run::{
-        context::RunContext,
-        display::{ProgressDisplay, RunnerProgressBar},
-        job::{Job, JobResult, JobResultState},
+use crate::{
+    commands::{
+        arguments::{CommonOpts, RunOpts},
+        run::{
+            context::RunContext,
+            display::{ProgressDisplay, RunnerProgressBar},
+            job::{Job, JobResult, JobResultState},
+        },
     },
+    utils::run_summary_logger::RunSummaryLogger,
 };
 
 const DEFAULT_WAIT_TIME: Duration = Duration::from_millis(100);
@@ -43,6 +46,9 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
     let mut display = ProgressDisplay::new(context.clone())?;
     let mut report_error_on_exit = false;
 
+    let mut summary_logger =
+        RunSummaryLogger::try_new(&context.log_dir().join("summary.csv")).await?;
+
     while !(instances.is_empty() && running_jobs.is_empty()) {
         // attempt to spawn new tasks if there are available slots
         if avail_slots > running_jobs.len() {
@@ -55,7 +61,7 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
         // poll all running tasks to see if they are finished
         // need for-loop rather than `running_jobs.drain(..)` as poll is fallible async fn
         for job_context in running_jobs.iter_mut() {
-            let success = job_context.poll(&mut display).await?;
+            let success = job_context.poll(&mut display, &mut summary_logger).await?;
             report_error_on_exit |= success == JobSuccess::ReportAsFailure;
         }
 
@@ -114,7 +120,11 @@ impl JobContext {
         }
     }
 
-    async fn poll(&mut self, display: &mut ProgressDisplay) -> anyhow::Result<JobSuccess> {
+    async fn poll(
+        &mut self,
+        display: &mut ProgressDisplay,
+        run_logger: &mut RunSummaryLogger,
+    ) -> anyhow::Result<JobSuccess> {
         while !self.task_handle.as_ref().unwrap().is_finished() {
             self.progress_bar
                 .update_progress_bar(display, &self.job, Instant::now());
@@ -133,6 +143,8 @@ impl JobContext {
             }
             _ => JobSuccess::ReportAsFailure,
         };
+
+        run_logger.log_job_result(self.job.iid(), &result).await?;
 
         self.progress_bar.finish(display, result.state);
         self.is_finished = true;

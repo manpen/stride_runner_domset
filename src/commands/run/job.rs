@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicU8, Ordering},
-    Arc,
+use std::{
+    fmt::Display,
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc,
+    },
 };
 
 use std::time::Duration;
@@ -22,6 +25,19 @@ pub enum JobResultState {
     Incomplete,
     Error,
     Timeout,
+}
+
+impl Display for JobResultState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Optimal { .. } => "optimal",
+            Self::Suboptimal { .. } => "suboptimal",
+            Self::Infeasible => "infeasible",
+            Self::Incomplete => "incomplete",
+            Self::Error => "error",
+            Self::Timeout => "timeout",
+        })
+    }
 }
 
 impl JobResultState {
