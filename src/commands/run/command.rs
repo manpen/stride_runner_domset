@@ -1,5 +1,5 @@
-use std::{sync::Arc, time::Duration};
-use tokio::{task, time::Instant};
+use std::{sync::Arc, task::Poll, time::Duration};
+use tokio::time::Instant;
 
 use crate::{
     commands::{
@@ -62,7 +62,7 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
         // need for-loop rather than `running_jobs.drain(..)` as poll is fallible async fn
         for job_context in running_jobs.iter_mut() {
             let success = job_context.poll(&mut display, &mut summary_logger).await?;
-            report_error_on_exit |= success == JobSuccess::ReportAsFailure;
+            report_error_on_exit |= success == Poll::Ready(JobSuccess::ReportAsFailure);
         }
 
         // remove finished tasks from list
@@ -124,12 +124,12 @@ impl JobContext {
         &mut self,
         display: &mut ProgressDisplay,
         run_logger: &mut RunSummaryLogger,
-    ) -> anyhow::Result<JobSuccess> {
-        while !self.task_handle.as_ref().unwrap().is_finished() {
+    ) -> anyhow::Result<Poll<JobSuccess>> {
+        if !self.task_handle.as_ref().unwrap().is_finished() {
             self.progress_bar
                 .update_progress_bar(display, &self.job, Instant::now());
 
-            task::yield_now().await;
+            return Ok(Poll::Pending);
         }
 
         let result = self.task_handle.take().unwrap().await??;
@@ -149,7 +149,7 @@ impl JobContext {
         self.progress_bar.finish(display, result.state);
         self.is_finished = true;
 
-        Ok(report_error_on_exit)
+        Ok(Poll::Ready(report_error_on_exit))
     }
 
     fn is_finished(&self) -> bool {
