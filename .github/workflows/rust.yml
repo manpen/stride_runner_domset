@@ -41,3 +41,21 @@ jobs:
       run: cargo clippy
     - name: Cargo Format
       run: cargo fmt --check
+
+
+  build_and_test_osx:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build debug
+      run: cargo build --verbose
+
+    - name: Build release
+      run: cargo build --verbose --release
+    
+    - name: Run tools/run_tests.sh
+      run: tools/run_tests.sh
+
+    - name: Build smaller release
+      run: cargo build --bin runner --profile smaller-release
