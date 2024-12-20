@@ -36,10 +36,17 @@ In this mode, the runner will link all your uploads to this UUID and also upload
 You can then visualize and track the performance of your via our website.
 
 ## Getting the Runner
-We currently support only Linux and plan to offer limited support to OSX. 
-Since the runner relies on unix signals (SIGTERM / SIGKILL) to communicate with a solver in accordance with the [optil.io](https://www.optil.io/optilion/help) rules, we are unaware of a mechanism to port the runner to MS Windows.
+For technical reasons (see below), we currently only support Unix-based operating systems:
+
+| OS      | Support      | Interactive Tests | Tests in CI |
+| ------- | ------------ | ----------------- | ----------- |
+| Linux   | best         | on all commits    | yes         |
+| OSX     | good         | sometimes         | yes         |
+| Windows | only in WSL* | none              | no          |
+
+*Since the runner relies on unix signals (SIGTERM / SIGKILL) to communicate with a solver in accordance with the [optil.io](https://www.optil.io/optilion/help) rules, we are unaware of a mechanism to port the runner to MS Windows.
 If you are developing under Windows consider using the [Windows Subsystem For Linux](https://learn.microsoft.com/en-us/windows/wsl/install).
-As an added benefit, your solution will be automatically compatible with optil.io.
+As an added benefit, your solver will be automatically compatible with optil.io.
 In case you are aware of a better solution, please let us know.
 Any help is welcomed -- please file an issue or, even better, a pull request. 
 
@@ -51,7 +58,10 @@ Simply follow the link, click on the latest successful run and download `stride-
 ### Build it from sources
 Building from sources should be rather simple.
 The only dependency we need is a [recent Rust installation](https://www.rust-lang.org/learn/get-started).
-Afterwards simply run `cargo build --release` from within the source directory. This will produce a runner binary in the folder `target/release/runner`. That's it ... hopefully ;)
+The installation of the toolchain is usually pretty easy and only require a single command.
+Afterwards simply run `cargo build --release` from within the source directory.
+This will produce a runner binary in the folder `target/release/runner`. 
+That's it ... hopefully ;)
 
 ## Using the runner
 The runner always operates relative to the current working directory.
@@ -176,7 +186,7 @@ In case the runner itself misbehaves, it might help to enable logging by passing
 
 ```bash
 # enable trace logging (potentially huge file!) and keep all stdin-stdout-stderr triples
-./runner --loggin trace run -i demo.list -k
+./runner --logging trace run -i demo.list -k
 ```
 
 ### Run Summary
