@@ -115,10 +115,7 @@ struct Opt {
     empty_lines: bool,
 }
 
-fn wait_for_sigterm(opts: &Opt) -> anyhow::Result<()> {
-    let term = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term))?;
-
+fn wait_for_sigterm(opts: &Opt, term: Arc<AtomicBool>) -> anyhow::Result<()> {
     if opts.add_comment {
         println!("c Waiting for SIGTERM");
         std::io::stdout().flush()?;
@@ -138,6 +135,10 @@ fn wait_for_sigterm(opts: &Opt) -> anyhow::Result<()> {
 fn main() -> anyhow::Result<()> {
     let opts = Opt::from_args();
 
+    // signal handling
+    let term = Arc::new(AtomicBool::new(false));
+    signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term))?;
+
     let adj_list = read_graph()?;
     let mut domset = greedy(&adj_list);
 
@@ -150,14 +151,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     if opts.wait_sigterm {
-        wait_for_sigterm(&opts)?;
+        wait_for_sigterm(&opts, term.clone())?;
     }
 
     if opts.never_terminate {
-        // register handler such that SIGTERM gets ignored
-        let term = Arc::new(AtomicBool::new(false));
-        signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term))?;
-
         loop {
             std::thread::sleep(Duration::from_secs(1));
         }

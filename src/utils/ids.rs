@@ -1,6 +1,6 @@
 use paste::paste;
 use serde::{Serialize, Serializer};
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
