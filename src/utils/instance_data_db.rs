@@ -4,13 +4,7 @@ use std::path::Path;
 use tracing::{debug, trace};
 
 use super::server_connection::ServerConnection;
-
-// Use strong type for instance id (IId) and data id (DId)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct IId(pub u32);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DId(pub u32);
+use super::*;
 
 pub struct InstanceDataDB {
     instance_data_db: SqlitePool,

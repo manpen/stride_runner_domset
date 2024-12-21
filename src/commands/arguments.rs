@@ -5,7 +5,7 @@ use structopt::StructOpt;
 use tracing::level_filters::LevelFilter;
 use uuid::Uuid;
 
-use crate::utils::settings::global_settings;
+use crate::utils::{settings::global_settings, IId};
 
 #[derive(StructOpt)]
 pub enum RegisterEnum {
@@ -259,7 +259,7 @@ pub struct ImportInstanceOpts {
         long,
         help = "Instance ID (IID) of the graph/solution to export"
     )]
-    pub instance: u32,
+    pub instance: IId,
 
     #[structopt(
         short,
@@ -282,7 +282,7 @@ pub struct ExportSolutionOpts {
         long,
         help = "Instance ID (IID) of the graph/solution to export"
     )]
-    pub instance: u32,
+    pub instance: IId,
 
     #[structopt(
         short,
@@ -303,7 +303,7 @@ pub struct ExportSolutionOpts {
 #[derive(Debug, StructOpt)]
 pub struct ImportSolutionOpts {
     #[structopt(short, long, help = "UUID of solver used to upload the solution")]
-    pub instance: u32,
+    pub instance: IId,
 
     #[structopt(
         short,

@@ -2,11 +2,11 @@ use derive_builder::Builder;
 use serde::Serialize;
 use tracing::{debug, trace};
 
-use super::{server_connection::ServerConnection, solver_executor::SolverResult};
+use super::{server_connection::ServerConnection, solver_executor::SolverResult, IId};
 
 #[derive(Debug, Serialize, Builder)]
 pub struct SolutionUploadRequest<'a> {
-    instance_id: u32,
+    instance_id: IId,
     run_uuid: uuid::Uuid,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -49,7 +49,7 @@ impl SolutionUploadRequest<'_> {
 
         if !resp.status().is_success() {
             debug!(
-                "Failed to upload solution for IID {}; response: {:?}",
+                "Failed to upload solution for {:?}; response: {:?}",
                 self.instance_id,
                 resp.text().await
             );
@@ -84,7 +84,7 @@ mod test {
         }
     }
 
-    const IID: u32 = 549;
+    const IID: IId = IId::new(549);
     const SOLUTION: [u32; 2] = [19, 70];
 
     #[tokio::test]

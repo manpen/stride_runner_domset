@@ -11,10 +11,11 @@ use crate::{
     pace::{instance_reader::PaceReader, Solution},
     utils::{
         directory::StrideDirectory,
-        instance_data_db::{DId, IId, InstanceDataDB},
+        instance_data_db::InstanceDataDB,
         server_connection::ServerConnection,
         solution_upload::{is_score_good_enough_for_upload, SolutionUploadRequestBuilder},
         solver_executor::SolverResult,
+        DId, IId,
     },
 };
 
@@ -22,20 +23,20 @@ use super::arguments::{CommonOpts, ImportSolutionOpts};
 
 #[derive(sqlx::FromRow, Debug)]
 struct InstanceInfo {
-    did: u32,
+    did: DId,
     best_score: Option<u32>,
     nodes: u32,
 }
 
 impl InstanceInfo {
-    async fn read_for_instance(meta_db: &SqlitePool, iid: u32) -> anyhow::Result<Self> {
+    async fn read_for_instance(meta_db: &SqlitePool, iid: IId) -> anyhow::Result<Self> {
         sqlx::query_as::<_, InstanceInfo>(
             r"SELECT best_score, nodes, data_did as did FROM Instance WHERE iid = ?",
         )
-        .bind(iid)
+        .bind(iid.iid_to_u32())
         .fetch_one(meta_db)
         .await
-        .with_context(|| format!("Reading instance info for iid={iid}"))
+        .with_context(|| format!("Reading instance info for {iid:?}"))
     }
 }
 
@@ -79,7 +80,7 @@ pub async fn command_import_solution(
     {
         let instance_db = InstanceDataDB::new(stride_dir.db_instance_file().as_path()).await?;
         let data = instance_db
-            .fetch_data_with_did(&server_conn, IId(cmd_opts.instance), DId(instance_info.did))
+            .fetch_data_with_did(&server_conn, cmd_opts.instance, instance_info.did)
             .await?;
         let reader = PaceReader::try_new(data.as_bytes())
             .with_context(|| "Creating reader for instance data")?;
@@ -98,13 +99,13 @@ pub async fn command_import_solution(
             .with_context(|| "Verifying solution")?;
 
         if !is_valid {
-            anyhow::bail!("Solution is not valid for instance {}", cmd_opts.instance);
+            anyhow::bail!("Solution is not valid for instance {:?}", cmd_opts.instance);
         }
     }
     println!(
         "The solution is {} for instance {} and has cardinality {}",
         Style::new().green().bold().apply_to("feasible"),
-        cmd_opts.instance,
+        cmd_opts.instance.iid_to_u32(),
         solution.solution.len(),
     );
 

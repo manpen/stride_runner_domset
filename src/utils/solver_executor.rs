@@ -12,6 +12,8 @@ use tracing::{debug, trace};
 
 use crate::pace::{graph::Node, instance_reader::PaceReader, Solution};
 
+use super::IId;
+
 #[derive(Debug, Serialize, Eq, PartialEq)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum SolverResult {
@@ -45,7 +47,7 @@ pub struct SolverExecutor {
     #[builder(setter(skip))]
     runtime: Option<Duration>,
 
-    instance_id: u32,
+    instance_id: IId,
     instance_data: String,
 }
 
@@ -202,10 +204,9 @@ impl SolverExecutor {
 
 #[cfg(test)]
 mod test {
-    use tempdir::TempDir;
-
-    use super::SolverExecutor;
+    use super::*;
     use std::path::{Path, PathBuf};
+    use tempdir::TempDir;
 
     const BIN_DUMMY: &str = "test_dummy";
     const BIN_GREEDY: &str = "greedy";
@@ -213,7 +214,7 @@ mod test {
     const TIMEOUT_MS: u64 = 1000;
     const GRACE_MS: u64 = 500;
 
-    const REF_ID: u32 = 1582;
+    const REF_ID: IId = IId::new(1582);
     const REF_DATA: &str = "p ds 9 8\n1 3\n1 4\n1 7\n2 8\n3 9\n4 8\n4 9\n5 6\n";
 
     const PREFIX: &str = "stride-solver-executor-test";

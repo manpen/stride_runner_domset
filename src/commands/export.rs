@@ -4,10 +4,8 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use sqlx::SqlitePool;
 
 use crate::utils::{
-    directory::StrideDirectory,
-    download_progress_bar::DownloadProgressBar,
-    instance_data_db::{IId, InstanceDataDB},
-    server_connection::ServerConnection,
+    directory::StrideDirectory, download_progress_bar::DownloadProgressBar,
+    instance_data_db::InstanceDataDB, server_connection::ServerConnection,
 };
 
 use super::arguments::{CommonOpts, ExportSolutionOpts, ImportInstanceOpts};
@@ -70,7 +68,7 @@ pub async fn command_export_instance(
     let instance_data_db = InstanceDataDB::new(stride_dir.db_instance_file().as_path()).await?;
     let meta_db = open_db_pool(stride_dir.db_meta_file().as_path()).await?;
     let data = instance_data_db
-        .fetch_data(&server_conn, &meta_db, IId(cmd_opts.instance))
+        .fetch_data(&server_conn, &meta_db, cmd_opts.instance)
         .await?;
 
     let destination = cmd_opts.output.as_path();
@@ -95,7 +93,9 @@ pub async fn command_export_solution(
     let server_conn = ServerConnection::new_from_opts(common_opts)?;
     let search_path = format!(
         "api/solutions/download?iid={}&solver={}&run={}",
-        cmd_opts.instance, cmd_opts.solver, cmd_opts.run
+        cmd_opts.instance.iid_to_u32(),
+        cmd_opts.solver,
+        cmd_opts.run
     );
 
     download(

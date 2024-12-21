@@ -5,6 +5,8 @@ use tokio::{fs::File, io::AsyncWriteExt, sync::Mutex};
 
 use crate::commands::run::job::JobResult;
 
+use super::IId;
+
 pub struct RunSummaryLogger {
     // we are not using a BufWriter, since all writes are prepared and flushed
     file: Arc<Mutex<File>>,
@@ -25,7 +27,7 @@ impl RunSummaryLogger {
         })
     }
 
-    pub async fn log_job_result(&self, iid: u32, summary: &JobResult) -> anyhow::Result<()> {
+    pub async fn log_job_result(&self, iid: IId, summary: &JobResult) -> anyhow::Result<()> {
         use crate::commands::run::job::JobResultState::*;
 
         let (score, best_known) = match summary.state {
@@ -36,7 +38,7 @@ impl RunSummaryLogger {
 
         let line = format!(
             "{},{},{},{},{}\n",
-            iid,
+            iid.iid_to_u32(),
             summary.runtime.as_secs_f64(),
             summary.state,
             score.map_or_else(String::new, |s| s.to_string()),
@@ -75,7 +77,10 @@ mod test {
                 state: JobResultState::BestKnown { score: 42 },
                 runtime: std::time::Duration::from_secs(1),
             };
-            logger.log_job_result(1, &job_result).await.unwrap();
+            logger
+                .log_job_result(IId::new(1), &job_result)
+                .await
+                .unwrap();
         }
 
         {
@@ -86,7 +91,10 @@ mod test {
                 },
                 runtime: std::time::Duration::from_secs(4),
             };
-            logger.log_job_result(2, &job_result).await.unwrap();
+            logger
+                .log_job_result(IId::new(2), &job_result)
+                .await
+                .unwrap();
         }
 
         {
@@ -94,7 +102,10 @@ mod test {
                 state: JobResultState::Error,
                 runtime: std::time::Duration::from_secs(2),
             };
-            logger.log_job_result(3, &job_result).await.unwrap();
+            logger
+                .log_job_result(IId::new(3), &job_result)
+                .await
+                .unwrap();
         }
 
         let content = tokio::fs::read_to_string(&path).await.unwrap();

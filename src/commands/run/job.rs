@@ -10,9 +10,9 @@ use std::time::Duration;
 use tracing::trace;
 
 use crate::utils::{
-    instance_data_db::{DId, IId},
     solution_upload::{is_score_good_enough_for_upload, SolutionUploadRequestBuilder},
     solver_executor::{SolverExecutorBuilder, SolverResult},
+    DId, IId,
 };
 
 use super::context::{MetaPool, RunContext};
@@ -95,15 +95,15 @@ impl AtomicJobState {
 
 pub struct Job {
     context: Arc<RunContext>,
-    iid: u32,
+    iid: IId,
     state: AtomicJobState,
 }
 
-#[derive(Default, Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 #[allow(non_snake_case)]
 struct InstanceModel {
-    iid: i32,
-    data_did: u32,
+    iid: IId,
+    data_did: DId,
     nodes: u32,
     edges: u32,
     best_score: Option<u32>,
@@ -150,7 +150,7 @@ impl InstanceModel {
 }
 
 impl Job {
-    pub fn new(context: Arc<RunContext>, iid: u32) -> Self {
+    pub fn new(context: Arc<RunContext>, iid: IId) -> Self {
         Self {
             context,
             iid,
@@ -164,11 +164,7 @@ impl Job {
         let data = self
             .context
             .instance_data_db()
-            .fetch_data_with_did(
-                self.context.server_conn(),
-                IId(self.iid),
-                DId(meta.data_did),
-            )
+            .fetch_data_with_did(self.context.server_conn(), self.iid, meta.data_did)
             .await?;
 
         self.update_state(JobState::Starting);
@@ -218,8 +214,7 @@ impl Job {
         self.state.load(Ordering::Acquire)
     }
 
-    #[allow(dead_code)]
-    pub fn iid(&self) -> u32 {
+    pub fn iid(&self) -> IId {
         self.iid
     }
 

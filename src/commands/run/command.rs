@@ -10,7 +10,7 @@ use crate::{
             job::{Job, JobResult, JobResultState},
         },
     },
-    utils::run_summary_logger::RunSummaryLogger,
+    utils::{run_summary_logger::RunSummaryLogger, IId},
 };
 
 const DEFAULT_WAIT_TIME: Duration = Duration::from_millis(100);
@@ -101,7 +101,7 @@ struct JobContext {
 }
 
 impl JobContext {
-    fn new(run: Arc<RunContext>, iid: u32) -> Self {
+    fn new(run: Arc<RunContext>, iid: IId) -> Self {
         let job = Arc::new(Job::new(run.clone(), iid));
 
         let task_handle = {

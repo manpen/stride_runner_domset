@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::utils::directory::StrideDirectory;
 use crate::utils::instance_data_db::InstanceDataDB;
 use crate::utils::server_connection::ServerConnection;
+use crate::utils::IId;
 
 use super::super::arguments::{CommonOpts, RunOpts};
 
@@ -18,7 +19,7 @@ pub struct MetaPool(pub SqlitePool);
 /// Reads a newline separated list of instance IDs from a file.
 /// Whitespaces are trimmed from the beginning and end of each line.
 /// Lines starting with 'c' are considered comments and ignored.
-fn read_instance_list(path: &Path) -> anyhow::Result<Vec<u32>> {
+fn read_instance_list(path: &Path) -> anyhow::Result<Vec<IId>> {
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
 
@@ -31,19 +32,19 @@ fn read_instance_list(path: &Path) -> anyhow::Result<Vec<u32>> {
             continue;
         }
 
-        let id = line.parse::<u32>()?;
+        let id = line.parse::<IId>()?;
         instances.push(id);
     }
 
     Ok(instances)
 }
 
-async fn check_that_instances_exist(db: &MetaPool, instances: &[u32]) -> anyhow::Result<()> {
-    let all_known: HashSet<u32> = fetch_instances_from_db(db, "1=1")
+async fn check_that_instances_exist(db: &MetaPool, instances: &[IId]) -> anyhow::Result<()> {
+    let all_known: HashSet<IId> = fetch_instances_from_db(db, "1=1")
         .await?
         .into_iter()
         .collect();
-    let proposed: HashSet<u32> = instances.iter().cloned().collect();
+    let proposed: HashSet<IId> = instances.iter().cloned().collect();
 
     if !proposed.is_subset(&all_known) {
         let mut difference: Vec<_> = proposed.difference(&all_known).collect();
@@ -65,12 +66,12 @@ async fn check_that_instances_exist(db: &MetaPool, instances: &[u32]) -> anyhow:
 async fn fetch_instances_from_db(
     MetaPool(db): &MetaPool,
     where_clause: &str,
-) -> anyhow::Result<Vec<u32>> {
+) -> anyhow::Result<Vec<IId>> {
     // there might be some "security" implications here, but I do not really care:
     // the sqlite database is fully under user control and worst-case the
     // user needs to re-pull it after they (intentionally) messed it up ...
     let instances =
-        sqlx::query_scalar::<_, u32>(&format!("SELECT iid FROM Instance WHERE {}", where_clause))
+        sqlx::query_scalar::<_, IId>(&format!("SELECT iid FROM Instance WHERE {}", where_clause))
             .fetch_all(db)
             .await?;
 
@@ -90,7 +91,7 @@ pub struct RunContext {
     server_conn: ServerConnection,
 
     //db_cache: SqlitePool,
-    instances: Vec<u32>,
+    instances: Vec<IId>,
 
     log_dir: std::path::PathBuf,
 }
@@ -151,7 +152,7 @@ impl RunContext {
         &self.db_meta
     }
 
-    pub fn instance_list(&self) -> &[u32] {
+    pub fn instance_list(&self) -> &[IId] {
         &self.instances
     }
 
@@ -257,6 +258,7 @@ impl RunContext {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use std::io::Write;
     use tempdir::TempDir;
 
@@ -281,6 +283,9 @@ mod test {
         }
 
         let instances = super::read_instance_list(&instances_file).unwrap();
-        assert_eq!(instances, vec![1, 712, 4, 5]);
+        assert_eq!(
+            instances,
+            vec![IId::new(1), IId::new(712), IId::new(4), IId::new(5)]
+        );
     }
 }

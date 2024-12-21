@@ -4,6 +4,8 @@ use console::{Attribute, Style};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tokio::time::Instant;
 
+use crate::utils::IId;
+
 use super::{
     context::RunContext,
     job::{Job, JobResultState, JobState},
@@ -133,7 +135,7 @@ impl ProgressDisplay {
         self.status_line.set_message(parts.join(" | "));
     }
 
-    pub fn finish_job(&mut self, _iid: u32, status: JobResultState) {
+    pub fn finish_job(&mut self, _iid: IId, status: JobResultState) {
         self.pb_total.inc(1);
 
         match status {
@@ -154,7 +156,7 @@ impl ProgressDisplay {
 
 pub struct RunnerProgressBar {
     context: Arc<RunContext>,
-    iid: u32,
+    iid: IId,
     pb: Option<ProgressBar>,
     previous_state: Option<JobState>,
     start: tokio::time::Instant,
@@ -164,7 +166,7 @@ pub struct RunnerProgressBar {
 impl RunnerProgressBar {
     const MILLIS_BEFORE_PROGRESS_BAR: u64 = 100;
 
-    pub fn new(context: Arc<RunContext>, iid: u32) -> Self {
+    pub fn new(context: Arc<RunContext>, iid: IId) -> Self {
         let max_time_millis = (context.cmd_opts().timeout + context.cmd_opts().grace) * 1000;
         Self {
             context,
