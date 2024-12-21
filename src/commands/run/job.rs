@@ -13,7 +13,7 @@ use crate::utils::{
     meta_data_db::InstanceModel,
     solution_upload::{is_score_good_enough_for_upload, SolutionUploadRequestBuilder},
     solver_executor::{SolverExecutorBuilder, SolverResult},
-    DId, IId,
+    IId,
 };
 
 use super::context::RunContext;
@@ -212,7 +212,7 @@ impl Job {
             return Vec::new();
         }
 
-        let mut env = instance_to_env(&meta);
+        let mut env = instance_to_env(meta);
         env.push((
             "STRIDE_TIMEOUT_SEC".into(),
             self.context.cmd_opts().timeout.to_string(),

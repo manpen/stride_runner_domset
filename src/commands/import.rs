@@ -15,7 +15,6 @@ use crate::{
         server_connection::ServerConnection,
         solution_upload::{is_score_good_enough_for_upload, SolutionUploadRequestBuilder},
         solver_executor::SolverResult,
-        DId, IId,
     },
 };
 

@@ -5,12 +5,10 @@ use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
 // Use strong type for instance id (IId) and data id (DId)
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, sqlx::Type)]
-#[sqlx(transparent)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct IId(pub u32);
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, sqlx::Type)]
-#[sqlx(transparent)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DId(pub u32);
 
 macro_rules! impl_id {

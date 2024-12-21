@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::utils::directory::StrideDirectory;
 use crate::utils::instance_data_db::InstanceDataDB;
-use crate::utils::meta_data_db::{self, DangerousRawClause, MetaDataDB};
+use crate::utils::meta_data_db::{DangerousRawClause, MetaDataDB};
 use crate::utils::server_connection::ServerConnection;
 use crate::utils::IId;
 

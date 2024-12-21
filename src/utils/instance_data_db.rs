@@ -1,20 +1,23 @@
+use anyhow::Context;
 use meta_data_db::MetaDataDB;
-use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePoolOptions, Sqlite, SqlitePool};
 use std::path::Path;
+use tokio::sync::Mutex;
 use tracing::{debug, trace};
 
 use super::server_connection::ServerConnection;
 use super::*;
 
+use rusqlite::{Connection, Result};
+
 pub struct InstanceDataDB {
-    instance_data_db: SqlitePool,
+    instance_data_db: Mutex<Connection>,
 }
 
 impl InstanceDataDB {
     pub async fn new(db_path: &Path) -> anyhow::Result<Self> {
         let db = Self::connect_or_create_db(db_path).await?;
         Ok(Self {
-            instance_data_db: db,
+            instance_data_db: Mutex::new(db),
         })
     }
 
@@ -50,62 +53,54 @@ impl InstanceDataDB {
             from_server.len()
         );
 
-        // TODO: We may need to handle locks here
         self.insert_into_db(did, &from_server).await?;
         Ok(from_server)
     }
 
-    async fn connect_or_create_db(path: &Path) -> anyhow::Result<SqlitePool> {
-        let path = match path.to_str() {
-            Some(path) => path,
-            None => anyhow::bail!("Path is not valid utf-8"),
-        };
-        let already_exists = Sqlite::database_exists(path).await?;
+    async fn connect_or_create_db(path: &Path) -> anyhow::Result<Connection> {
+        let already_exists = path.is_file();
 
         if !already_exists {
-            debug!("Creating database {}", path);
-            Sqlite::create_database(path).await?;
+            debug!("Creating database {path:?}");
         }
+        let connection = Connection::open(path)?;
 
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(path)
-            .await?;
-
-        trace!("Connection to SQLite database {path} is successful!");
+        trace!("Connection to InstanceDataDB {path:?} is successful!");
 
         if !already_exists {
-            debug!("Creating table `InstanceData` in database {}", path);
-            sqlx::query("CREATE TABLE InstanceData ( did INT PRIMARY KEY, data LONGBLOB);")
-                .execute(&pool)
-                .await
-                .expect("Failed to create SQLite tables");
+            debug!("Creating table `InstanceData` in database {path:?}");
+
+            connection.execute(
+                "CREATE TABLE InstanceData ( did INT PRIMARY KEY, data LONGBLOB);",
+                [],
+            )?;
         }
 
-        Ok(pool)
+        Ok(connection)
     }
 
     async fn fetch_data_from_db(&self, did: DId) -> anyhow::Result<Option<String>> {
-        match sqlx::query_scalar::<_, Vec<u8>>(
-            "SELECT data FROM InstanceData WHERE did = ? LIMIT 1",
-        )
-        .bind(did.0)
-        .fetch_one(&self.instance_data_db)
-        .await
-        {
+        let conn = self.instance_data_db.lock().await;
+
+        let row: Result<Vec<u8>, _> = conn
+            .prepare("SELECT data FROM InstanceData WHERE did = ?1 LIMIT 1")?
+            .query_row([did.did_to_u32()], |row| row.get(0));
+
+        match row {
             Ok(data) => Ok(Some(String::from_utf8(data)?)),
-            Err(sqlx::Error::RowNotFound) => Ok(None),
-            Err(e) => Err(e.into()),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e).with_context(|| format!("Fetching data for {did:?} from DB")),
         }
     }
 
     async fn insert_into_db(&self, did: DId, data: &str) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO InstanceData (did, data) VALUES (?, ?);")
-            .bind(did.0)
-            .bind(data)
-            .execute(&self.instance_data_db)
-            .await?;
+        let conn = self.instance_data_db.lock().await;
 
+        conn.execute(
+            "INSERT INTO InstanceData (did, data) VALUES (?1, ?2)",
+            (did.did_to_u32(), data.as_bytes()),
+        )
+        .with_context(|| format!("Inserting data for did {did:?}"))?;
         Ok(())
     }
 
@@ -130,16 +125,14 @@ impl InstanceDataDB {
             None => anyhow::bail!("Path is not valid utf-8"),
         };
 
-        sqlx::query("ATTACH ? AS download")
-            .bind(path)
-            .execute(&self.instance_data_db)
-            .await?;
+        let conn = self.instance_data_db.lock().await;
 
-        sqlx::query("INSERT OR IGNORE INTO InstanceData (did, data) SELECT did, data FROM download.InstanceData").execute(&self.instance_data_db).await?;
+        conn.execute("ATTACH ?1 as download", (path,))
+            .with_context(|| format!("Attaching {path:?}"))?;
 
-        sqlx::query("DETACH download")
-            .execute(&self.instance_data_db)
-            .await?;
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO InstanceData (did, data) SELECT did, data FROM download.InstanceData; DETACH download;",
+            ).with_context(|| format!("Adding data from {path:?}"))?;
 
         Ok(())
     }
