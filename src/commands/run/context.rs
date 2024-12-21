@@ -52,7 +52,7 @@ async fn check_that_instances_exist(db: &MetaDataDB, instances: &[IId]) -> anyho
         let diff_str: Vec<_> = difference
             .into_iter()
             .take(20)
-            .map(|iid| iid.to_string())
+            .map(|iid| iid.iid_to_u32().to_string())
             .collect();
         let diff_str = diff_str.join(", ");
 
@@ -224,7 +224,7 @@ impl RunContext {
             self.instances.len()
         )?;
         for iid in &self.instances {
-            writeln!(writer, "{}", iid)?;
+            writeln!(writer, "{}", iid.iid_to_u32())?;
         }
 
         Ok(())

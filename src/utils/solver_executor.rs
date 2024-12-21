@@ -128,7 +128,7 @@ impl SolverExecutor {
 
     fn filename(&self, suffix: &str) -> PathBuf {
         self.working_dir
-            .join(format!("iid{}.{}", self.instance_id, suffix))
+            .join(format!("iid{}.{}", self.instance_id.iid_to_u32(), suffix))
     }
 
     fn move_instance_data_to_file(&mut self) -> anyhow::Result<()> {
@@ -172,7 +172,7 @@ impl SolverExecutor {
         }
 
         debug!(
-            "IID: {} Timeout after {}s reached; send sigterm child",
+            "{:?} Timeout after {}s reached; send sigterm child",
             self.instance_id,
             self.timeout.as_secs()
         );
@@ -191,7 +191,7 @@ impl SolverExecutor {
         }
 
         debug!(
-            "IID: {} Grace period after {}s reached; kill child",
+            "{:?} Grace period after {}s reached; kill child",
             self.instance_id,
             self.timeout.as_secs()
         );

@@ -120,7 +120,8 @@ fn instance_to_env(inst: &InstanceModel) -> Vec<(String, String)> {
         };
     }
 
-    push!(iid);
+    // IId does not implement Display by choice
+    env.push(("STRIDE_IID".into(), inst.iid.iid_to_u32().to_string()));
     push!(nodes);
     push!(edges);
 
@@ -203,7 +204,7 @@ impl Job {
     }
 
     fn update_state(&self, state: JobState) {
-        trace!("Runner {} switched into state: {:?}", self.iid, state);
+        trace!("Runner {:?} switched into state: {:?}", self.iid, state);
         self.state.store(state, Ordering::Release);
     }
 

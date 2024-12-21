@@ -236,7 +236,7 @@ impl RunnerProgressBar {
     }
 
     fn style_for_running(&self, pb: &ProgressBar) {
-        let mut template = format!("Inst. ID {: >6} ", self.iid);
+        let mut template = format!("Inst. ID {: >6} ", self.iid.iid_to_u32());
         template += "[{elapsed_precise}] [{bar:50.cyan/blue}] {msg}";
 
         pb.set_style(
@@ -250,7 +250,7 @@ impl RunnerProgressBar {
     }
 
     fn style_for_waiting(&self, pb: &ProgressBar) {
-        let mut template = format!("Inst. ID {: >6} ", self.iid);
+        let mut template = format!("Inst. ID {: >6} ", self.iid.iid_to_u32());
         template += "[{elapsed_precise}] {spinner:.green}                                                    {msg}";
 
         pb.set_style(ProgressStyle::default_bar().template(&template).unwrap());

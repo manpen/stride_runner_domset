@@ -43,12 +43,6 @@ macro_rules! impl_id {
                 }
             }
 
-            impl Display for $name {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    write!(f, "{}", self.0)
-                }
-            }
-
             impl $name {
                 pub const fn new(id: u32) -> Self {
                     Self(id)
