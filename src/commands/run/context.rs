@@ -3,18 +3,16 @@ use std::{io::BufRead, path::Path};
 
 use chrono::{DateTime, Local};
 use rand::seq::SliceRandom;
-use sqlx::SqlitePool;
 use tracing::debug;
 use uuid::Uuid;
 
 use crate::utils::directory::StrideDirectory;
 use crate::utils::instance_data_db::InstanceDataDB;
+use crate::utils::meta_data_db::{self, DangerousRawClause, MetaDataDB};
 use crate::utils::server_connection::ServerConnection;
 use crate::utils::IId;
 
 use super::super::arguments::{CommonOpts, RunOpts};
-
-pub struct MetaPool(pub SqlitePool);
 
 /// Reads a newline separated list of instance IDs from a file.
 /// Whitespaces are trimmed from the beginning and end of each line.
@@ -39,8 +37,9 @@ fn read_instance_list(path: &Path) -> anyhow::Result<Vec<IId>> {
     Ok(instances)
 }
 
-async fn check_that_instances_exist(db: &MetaPool, instances: &[IId]) -> anyhow::Result<()> {
-    let all_known: HashSet<IId> = fetch_instances_from_db(db, "1=1")
+async fn check_that_instances_exist(db: &MetaDataDB, instances: &[IId]) -> anyhow::Result<()> {
+    let all_known: HashSet<IId> = db
+        .fetch_instance_iids_from_db(DangerousRawClause("1=1"))
         .await?
         .into_iter()
         .collect();
@@ -63,21 +62,6 @@ async fn check_that_instances_exist(db: &MetaPool, instances: &[IId]) -> anyhow:
     Ok(())
 }
 
-async fn fetch_instances_from_db(
-    MetaPool(db): &MetaPool,
-    where_clause: &str,
-) -> anyhow::Result<Vec<IId>> {
-    // there might be some "security" implications here, but I do not really care:
-    // the sqlite database is fully under user control and worst-case the
-    // user needs to re-pull it after they (intentionally) messed it up ...
-    let instances =
-        sqlx::query_scalar::<_, IId>(&format!("SELECT iid FROM Instance WHERE {}", where_clause))
-            .fetch_all(db)
-            .await?;
-
-    Ok(instances)
-}
-
 pub struct RunContext {
     common_opts: CommonOpts,
     cmd_opts: RunOpts,
@@ -85,12 +69,11 @@ pub struct RunContext {
     start: DateTime<Local>,
     run_uuid: Uuid,
 
-    db_meta: MetaPool,
+    meta_data_db: MetaDataDB,
 
     instance_data_db: InstanceDataDB,
     server_conn: ServerConnection,
 
-    //db_cache: SqlitePool,
     instances: Vec<IId>,
 
     log_dir: std::path::PathBuf,
@@ -100,7 +83,9 @@ impl RunContext {
     pub async fn new(common_opts: CommonOpts, cmd_opts: RunOpts) -> anyhow::Result<Self> {
         let stride_dir = StrideDirectory::try_default()?;
         let server_conn = ServerConnection::new_from_opts(&common_opts)?;
+
         let instance_data_db = InstanceDataDB::new(stride_dir.db_instance_file().as_path()).await?;
+        let meta_data_db = MetaDataDB::new(stride_dir.db_meta_file().as_path()).await?;
 
         let start = chrono::Local::now();
         let run_uuid = Uuid::new_v4();
@@ -113,11 +98,10 @@ impl RunContext {
             start,
             run_uuid,
 
-            db_meta: MetaPool(Self::open_db_pool(stride_dir.db_meta_file().as_path()).await?),
-            //db_cache: Self::open_db_pool(stride_dir.db_cache_file().as_path()).await?,
-            //
-            server_conn,
+            meta_data_db,
             instance_data_db,
+
+            server_conn,
             instances: Vec::new(),
 
             log_dir,
@@ -148,8 +132,8 @@ impl RunContext {
         &self.cmd_opts
     }
 
-    pub fn db_meta(&self) -> &MetaPool {
-        &self.db_meta
+    pub fn meta_data_db(&self) -> &MetaDataDB {
+        &self.meta_data_db
     }
 
     pub fn instance_list(&self) -> &[IId] {
@@ -186,7 +170,7 @@ impl RunContext {
             Some(path) => {
                 let instances = read_instance_list(path.as_path())?;
                 debug!("Read {} instances from {:?}", instances.len(), path);
-                check_that_instances_exist(self.db_meta(), &instances).await?;
+                check_that_instances_exist(self.meta_data_db(), &instances).await?;
                 Some(instances)
             }
             None => None,
@@ -194,7 +178,10 @@ impl RunContext {
 
         let instances_from_db = match &self.cmd_opts.sql_where {
             Some(where_clause) => {
-                let instances = fetch_instances_from_db(self.db_meta(), where_clause).await?;
+                let instances = self
+                    .meta_data_db()
+                    .fetch_instance_iids_from_db(DangerousRawClause(where_clause))
+                    .await?;
                 debug!(
                     "Read {} instances from InstanceDB where {}",
                     instances.len(),
@@ -241,18 +228,6 @@ impl RunContext {
         }
 
         Ok(())
-    }
-
-    async fn open_db_pool(path: &Path) -> anyhow::Result<SqlitePool> {
-        if !path.is_file() {
-            anyhow::bail!("Database file {path:?} does not exist. Run the >update< command first");
-        }
-
-        let pool = sqlx::sqlite::SqlitePool::connect(
-            format!("sqlite:{}", path.to_str().expect("valid path name")).as_str(),
-        )
-        .await?;
-        Ok(pool)
     }
 }
 

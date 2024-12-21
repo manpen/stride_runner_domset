@@ -1,11 +1,11 @@
 use std::{io::Write, path::Path};
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use sqlx::SqlitePool;
 
 use crate::utils::{
     directory::StrideDirectory, download_progress_bar::DownloadProgressBar,
-    instance_data_db::InstanceDataDB, server_connection::ServerConnection,
+    instance_data_db::InstanceDataDB, meta_data_db::MetaDataDB,
+    server_connection::ServerConnection,
 };
 
 use super::arguments::{CommonOpts, ExportSolutionOpts, ImportInstanceOpts};
@@ -46,19 +46,6 @@ async fn download(
     Ok(())
 }
 
-// TODO: de-duplicate this code
-async fn open_db_pool(path: &Path) -> anyhow::Result<SqlitePool> {
-    if !path.is_file() {
-        anyhow::bail!("Database file {path:?} does not exist. Run the >update< command first");
-    }
-
-    let pool = sqlx::sqlite::SqlitePool::connect(
-        format!("sqlite:{}", path.to_str().expect("valid path name")).as_str(),
-    )
-    .await?;
-    Ok(pool)
-}
-
 pub async fn command_export_instance(
     common_opts: &CommonOpts,
     cmd_opts: &ImportInstanceOpts,
@@ -66,7 +53,7 @@ pub async fn command_export_instance(
     let stride_dir = StrideDirectory::try_default()?;
     let server_conn = ServerConnection::new_from_opts(common_opts)?;
     let instance_data_db = InstanceDataDB::new(stride_dir.db_instance_file().as_path()).await?;
-    let meta_db = open_db_pool(stride_dir.db_meta_file().as_path()).await?;
+    let meta_db = MetaDataDB::new(stride_dir.db_meta_file().as_path()).await?;
     let data = instance_data_db
         .fetch_data(&server_conn, &meta_db, cmd_opts.instance)
         .await?;

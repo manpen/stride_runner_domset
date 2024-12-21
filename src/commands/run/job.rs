@@ -10,12 +10,13 @@ use std::time::Duration;
 use tracing::trace;
 
 use crate::utils::{
+    meta_data_db::InstanceModel,
     solution_upload::{is_score_good_enough_for_upload, SolutionUploadRequestBuilder},
     solver_executor::{SolverExecutorBuilder, SolverResult},
     DId, IId,
 };
 
-use super::context::{MetaPool, RunContext};
+use super::context::RunContext;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobResultState {
@@ -99,54 +100,37 @@ pub struct Job {
     state: AtomicJobState,
 }
 
-#[derive(Debug, sqlx::FromRow)]
-#[allow(non_snake_case)]
-struct InstanceModel {
-    iid: IId,
-    data_did: DId,
-    nodes: u32,
-    edges: u32,
-    best_score: Option<u32>,
+fn instance_to_env(inst: &InstanceModel) -> Vec<(String, String)> {
+    let mut env = Vec::with_capacity(10);
 
-    diameter: Option<u32>,
-    treewidth: Option<u32>,
-    planar: Option<bool>,
-    bipartite: Option<bool>,
-}
-
-impl InstanceModel {
-    fn to_env(&self) -> Vec<(String, String)> {
-        let mut env = Vec::with_capacity(10);
-
-        macro_rules! push {
-            ($name:ident) => {
+    macro_rules! push {
+        ($name:ident) => {
+            env.push((
+                String::from(concat!("STRIDE_", stringify!($name))).to_ascii_uppercase(),
+                inst.$name.to_string(),
+            ));
+        };
+        (opt, $name:ident) => {
+            if let Some(x) = inst.$name {
                 env.push((
                     String::from(concat!("STRIDE_", stringify!($name))).to_ascii_uppercase(),
-                    self.$name.to_string(),
+                    x.to_string(),
                 ));
-            };
-            (opt, $name:ident) => {
-                if let Some(x) = self.$name {
-                    env.push((
-                        String::from(concat!("STRIDE_", stringify!($name))).to_ascii_uppercase(),
-                        x.to_string(),
-                    ));
-                }
-            };
-        }
-
-        push!(iid);
-        push!(nodes);
-        push!(edges);
-
-        push!(opt, best_score);
-        push!(opt, diameter);
-        push!(opt, treewidth);
-        push!(opt, planar);
-        push!(opt, bipartite);
-
-        env
+            }
+        };
     }
+
+    push!(iid);
+    push!(nodes);
+    push!(edges);
+
+    push!(opt, best_score);
+    push!(opt, diameter);
+    push!(opt, treewidth);
+    push!(opt, planar);
+    push!(opt, bipartite);
+
+    env
 }
 
 impl Job {
@@ -160,7 +144,7 @@ impl Job {
 
     pub async fn main(&self) -> anyhow::Result<JobResult> {
         self.update_state(JobState::Fetching);
-        let meta = self.fetch_instance_meta_data().await?;
+        let meta = self.context.meta_data_db().fetch_instance(self.iid).await?;
         let data = self
             .context
             .instance_data_db()
@@ -228,7 +212,7 @@ impl Job {
             return Vec::new();
         }
 
-        let mut env = meta.to_env();
+        let mut env = instance_to_env(&meta);
         env.push((
             "STRIDE_TIMEOUT_SEC".into(),
             self.context.cmd_opts().timeout.to_string(),
@@ -245,22 +229,6 @@ impl Job {
             env.push(("STRIDE_SOLVER_UUID".to_string(), x.to_string()));
         }
         env
-    }
-
-    async fn fetch_instance_meta_data(&self) -> anyhow::Result<InstanceModel> {
-        let MetaPool(pool) = self.context.db_meta();
-        let instance = sqlx::query_as::<_, InstanceModel>(
-            r#"
-                SELECT iid, data_did, nodes, edges, best_score, diameter, treewidth, planar, bipartite
-                FROM Instance
-                WHERE iid = ?
-            "#,
-        )
-        .bind(self.iid)
-        .fetch_one(pool)
-        .await?;
-
-        Ok(instance)
     }
 
     async fn upload_results(

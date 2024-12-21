@@ -1,4 +1,4 @@
-use anyhow::Context;
+use meta_data_db::MetaDataDB;
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePoolOptions, Sqlite, SqlitePool};
 use std::path::Path;
 use tracing::{debug, trace};
@@ -21,14 +21,10 @@ impl InstanceDataDB {
     pub async fn fetch_data(
         &self,
         server_conn: &ServerConnection,
-        meta_db: &SqlitePool,
+        meta_db: &MetaDataDB,
         iid: IId,
     ) -> anyhow::Result<String> {
-        let did = self
-            .get_did_from_iid(meta_db, iid)
-            .await
-            .with_context(|| format!("Fetching DID for {:?}", iid))?;
-
+        let did = meta_db.fetch_did_of_iid(iid).await?;
         self.fetch_data_with_did(server_conn, iid, did).await
     }
 
@@ -99,17 +95,6 @@ impl InstanceDataDB {
         {
             Ok(data) => Ok(Some(String::from_utf8(data)?)),
             Err(sqlx::Error::RowNotFound) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    async fn get_did_from_iid(&self, meta_db: &SqlitePool, iid: IId) -> anyhow::Result<DId> {
-        match sqlx::query_scalar::<_, u32>("SELECT data_did FROM Instance WHERE iid = ? LIMIT 1")
-            .bind(iid.0)
-            .fetch_one(meta_db)
-            .await
-        {
-            Ok(did) => Ok(DId(did)),
             Err(e) => Err(e.into()),
         }
     }
