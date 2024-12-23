@@ -2,6 +2,7 @@
 see also:
  - [STRIDE website](https://domset.algorithm.engineering)
  - [Source code of the instance server](https://github.com/manpen/stride_server_domset)
+ - [Getting Started on YouTube](https://youtu.be/ip8TgMZ6m2Y)
 
 The STRIDE system is designed as an *unofficial* companion to the [PACE 2025 Dominating Set challenge](https://pacechallenge.org/2025/ds/).
 It provides a [large database of problem instances](https://domset.algorithm.engineering) and solutions.
