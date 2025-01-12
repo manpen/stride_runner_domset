@@ -114,6 +114,9 @@ impl SolverExecutor {
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                 return Ok(SolverResult::IncompleteOutput);
             }
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+                return Ok(SolverResult::SyntaxError);
+            }
             Err(e) => return Err(e.into()),
         };
 
