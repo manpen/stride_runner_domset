@@ -8,7 +8,7 @@ use crate::utils::{
     server_connection::ServerConnection,
 };
 
-use super::arguments::{CommonOpts, ExportSolutionOpts, ImportInstanceOpts};
+use super::arguments::{CommonOpts, ExportInstanceOpts, ExportSolutionOpts};
 
 async fn download(
     server_conn: ServerConnection,
@@ -48,7 +48,7 @@ async fn download(
 
 pub async fn command_export_instance(
     common_opts: &CommonOpts,
-    cmd_opts: &ImportInstanceOpts,
+    cmd_opts: &ExportInstanceOpts,
 ) -> anyhow::Result<()> {
     let stride_dir = StrideDirectory::try_default()?;
     let server_conn = ServerConnection::new_from_opts(common_opts)?;
@@ -58,15 +58,22 @@ pub async fn command_export_instance(
         .fetch_data(&server_conn, &meta_db, cmd_opts.instance)
         .await?;
 
-    let destination = cmd_opts.output.as_path();
-    if !cmd_opts.force && cmd_opts.output.exists() {
+    let destination = if let Some(pathbuf) = cmd_opts.output.clone() {
+        pathbuf
+    } else {
+        Path::new(&cmd_opts.instance.iid_to_u32().to_string())
+            .with_extension("gr")
+            .to_path_buf()
+    };
+
+    if !cmd_opts.force && destination.exists() {
         anyhow::bail!(
             "File already exists: {}; change output path or use -f/--force to overwrite",
             destination.display()
         );
     }
 
-    let mut file = std::fs::File::create(destination)?;
+    let mut file = std::fs::File::create(&destination)?;
     file.write_all(data.as_bytes())?;
 
     println!("Stored instance data to: {}", destination.display());

@@ -51,6 +51,11 @@ test_export_instance() {
     # file exists; should not fail
     assert_failed $ARGS
     assert_success $ARGS -f # force overwrite
+
+    # without providing output name
+    rm -f 476.gr
+    assert_success export-instance -i 476
+    rm -f 476.gr
 }
 
 

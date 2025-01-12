@@ -24,7 +24,7 @@ pub enum RunEnum {
 
 #[derive(StructOpt)]
 pub enum ExportInstanceEnum {
-    ExportInstance(ImportInstanceOpts),
+    ExportInstance(ExportInstanceOpts),
 }
 
 #[derive(StructOpt)]
@@ -253,7 +253,7 @@ pub struct UpdateOpts {
 /////////////////////
 
 #[derive(Debug, StructOpt)]
-pub struct ImportInstanceOpts {
+pub struct ExportInstanceOpts {
     #[structopt(
         short,
         long,
@@ -264,9 +264,9 @@ pub struct ImportInstanceOpts {
     #[structopt(
         short,
         long,
-        help = "Path to the file where the data should be exported to"
+        help = "Path to the file where the data should be exported to; default: {IID}.gr"
     )]
-    pub output: PathBuf,
+    pub output: Option<PathBuf>,
 
     #[structopt(short, long, help = "Overwrite output file if it already exists")]
     pub force: bool,
