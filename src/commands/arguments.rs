@@ -264,7 +264,7 @@ pub struct ExportInstanceOpts {
     #[structopt(
         short,
         long,
-        help = "Path to the file where the data should be exported to; default: {IID}.gr"
+        help = "Destination path. Use '/' for {IID}.gr. Default: stdout"
     )]
     pub output: Option<PathBuf>,
 
