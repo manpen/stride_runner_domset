@@ -254,11 +254,7 @@ pub struct UpdateOpts {
 
 #[derive(Debug, StructOpt)]
 pub struct ExportInstanceOpts {
-    #[structopt(
-        short,
-        long,
-        help = "Instance ID (IID) of the graph/solution to export"
-    )]
+    #[structopt(help = "Instance ID (IID) of the graph/solution to export")]
     pub instance: IId,
 
     #[structopt(

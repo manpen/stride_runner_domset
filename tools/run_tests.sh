@@ -41,20 +41,20 @@ run_cargo_test() {
 test_export_instance() {
     echo "Run export instance test"
     local OUTPUT="$TESTDIR/476.gr"
-    local ARGS="export-instance -i 476 -o $OUTPUT"
+    local ARGS="export-instance -o $OUTPUT"
 
     rm -f $OUTPUT
-    assert_success $ARGS
+    assert_success $ARGS 476
     local edges=$(lines_with_edges $OUTPUT)
     assert_eq 11 $edges "Exported instance should have 4 edges"
     
     # file exists; should not fail
-    assert_failed $ARGS
-    assert_success $ARGS -f # force overwrite
+    assert_failed $ARGS 476
+    assert_success $ARGS -f 476 # force overwrite
 
     # without providing output name
     rm -f 476.gr
-    assert_success export-instance -i 476
+    assert_success export-instance -o/ 476 
     rm -f 476.gr
 }
 
@@ -102,18 +102,18 @@ test_update() {
   test -f .stride/instances.db
   assert_eq "0" $? "Update should create instances.db"
 
-  assert_success -l debug export-instance -i 1 -o $TESTDIR/1.gr -f
+  assert_success -l debug export-instance -o $TESTDIR/1.gr -f 1
   grep -q "IId(1) from server" stride-runner.log
   assert_eq "0" $? "Log should contain 'IId(1) from server'"
 
-  assert_success -l debug export-instance -i 1 -o $TESTDIR/1.gr -f
+  assert_success -l debug export-instance -o $TESTDIR/1.gr -f 1
   grep -q "IId(1) from server" stride-runner.log
   assert_not_eq "0" $? "Log should not contain 'IId(1) from server'"
 
   # this should merge the dbs -> iid 1 should remain in db
   assert_success update
 
-  assert_success -l debug export-instance -i 1 -o $TESTDIR/1.gr -f
+  assert_success -l debug export-instance -o $TESTDIR/1.gr -f 1
   grep -q "IId(1) from server" stride-runner.log
   assert_not_eq "0" $? "Log should not contain 'IId(1) from server'"
 }
