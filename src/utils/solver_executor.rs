@@ -25,6 +25,13 @@ pub enum SolverResult {
     IncompleteOutput,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ChildExitCode {
+    BeforeTimeout(ExitStatus),
+    WithinGrace(ExitStatus),
+    Timeout,
+}
+
 impl SolverResult {
     pub fn score(&self) -> Option<u32> {
         match self {
@@ -66,10 +73,15 @@ impl SolverExecutor {
         self.runtime = Some(start_time.elapsed());
 
         let status = match wait_result {
-            Some(status) => status,
-            None => {
-                return Ok(SolverResult::Timeout);
+            ChildExitCode::BeforeTimeout(status) => status,
+            ChildExitCode::WithinGrace(status) => {
+                if status.success() {
+                    status
+                } else {
+                    return Ok(SolverResult::Timeout);
+                }
             }
+            ChildExitCode::Timeout => return Ok(SolverResult::Timeout),
         };
 
         // TODO: we might want to handle a non-zero exit status differently
@@ -168,10 +180,10 @@ impl SolverExecutor {
     async fn timeout_wait_for_child_to_complete(
         &self,
         mut child: Child,
-    ) -> anyhow::Result<Option<ExitStatus>> {
+    ) -> anyhow::Result<ChildExitCode> {
         // we get an error if we run into the timeout
         if let Ok(res) = timeout(self.timeout, child.wait()).await {
-            return Ok(Some(res?));
+            return Ok(ChildExitCode::BeforeTimeout(res?));
         }
 
         debug!(
@@ -189,8 +201,10 @@ impl SolverExecutor {
         }
 
         // issue a grace period
-        if let Ok(res) = timeout(self.grace, child.wait()).await {
-            return Ok(Some(res?));
+        if !self.grace.is_zero() {
+            if let Ok(res) = timeout(self.grace, child.wait()).await {
+                return Ok(ChildExitCode::WithinGrace(res?));
+            }
         }
 
         debug!(
@@ -201,7 +215,7 @@ impl SolverExecutor {
 
         child.kill().await?;
 
-        Ok(None)
+        Ok(ChildExitCode::Timeout)
     }
 }
 
@@ -269,11 +283,14 @@ mod test {
 
         let start = std::time::Instant::now();
         let child = exec.spawn_child().unwrap();
-        let status = exec
+        let status = match exec
             .timeout_wait_for_child_to_complete(child)
             .await
             .unwrap()
-            .unwrap();
+        {
+            ChildExitCode::BeforeTimeout(x) => x,
+            _ => panic!("Not supposed to happen"),
+        };
 
         assert!(
             start.elapsed().as_millis() < 1000,
@@ -292,11 +309,14 @@ mod test {
 
         let start = std::time::Instant::now();
         let child = exec.spawn_child().unwrap();
-        let status = exec
+        let status = match exec
             .timeout_wait_for_child_to_complete(child)
             .await
             .unwrap()
-            .unwrap();
+        {
+            ChildExitCode::WithinGrace(x) => x,
+            _ => panic!("Not supposed to happen"),
+        };
 
         assert!(
             start.elapsed().as_millis() > TIMEOUT_MS as u128,
@@ -327,7 +347,7 @@ mod test {
         );
 
         // timeout yields None if the child has been killed
-        assert!(status.is_none(), "{status:?}");
+        assert_eq!(status, ChildExitCode::Timeout);
     }
 
     #[tokio::test]
