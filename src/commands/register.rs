@@ -26,10 +26,7 @@ pub async fn command_register(
         if !cmd_opts.delete_old_uuid {
             let style_important = Style::new().red();
             let style_highlight = Style::new().yellow();
-            println!(
-                "The config file currently contains the following Solver UUID: {}",
-                uuid
-            );
+            println!("The config file currently contains the following Solver UUID: {uuid}");
             println!(
                 "{}",
                 style_important.apply_to(
@@ -76,7 +73,7 @@ fn save_uuid_to_backup(uuid: Uuid) -> anyhow::Result<()> {
     let mut file = OpenOptions::new().append(true).create(true).open(path)?;
 
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    writeln!(file, "{} Reregister. The old UUID was {}", now, uuid)?;
+    writeln!(file, "{now} Reregister. The old UUID was {uuid}")?;
 
     Ok(())
 }

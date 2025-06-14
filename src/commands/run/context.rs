@@ -115,7 +115,7 @@ impl RunContext {
     ) -> anyhow::Result<std::path::PathBuf> {
         let log_base = &common_opts.run_log_dir;
         let timestamp = start.format("%y%m%d_%H%M%S");
-        let dirname = format!("{}_{}", timestamp, run_uuid);
+        let dirname = format!("{timestamp}_{run_uuid}");
 
         let path = log_base.join(dirname);
         let _ = std::fs::create_dir_all(&path);

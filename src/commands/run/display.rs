@@ -129,7 +129,7 @@ impl ProgressDisplay {
             format_num!(num_timeout, "Timeout", yellow),
             format_num!(num_error, "Err", red),
             format_num!(num_infeasible, "Infeas", red, CRITICAL),
-            format!("Running: {}", running),
+            format!("Running: {running}"),
         ];
 
         self.status_line.set_message(parts.join(" | "));

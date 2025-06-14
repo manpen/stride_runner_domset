@@ -18,7 +18,7 @@ impl RunSummaryLogger {
     pub async fn try_new(path: &Path) -> anyhow::Result<Self> {
         let mut file = File::create(path)
             .await
-            .with_context(|| format!("Failed to create run summary file at {:?}", path))?;
+            .with_context(|| format!("Failed to create run summary file at {path:?}"))?;
 
         file.write_all(HEADER_STR.as_bytes()).await?;
 

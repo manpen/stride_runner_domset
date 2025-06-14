@@ -76,7 +76,7 @@ impl MetaDataDB {
     ) -> anyhow::Result<Vec<IId>> {
         trace!("Starting fetch_instance_iids_from_db");
 
-        let sql = format!("SELECT iid FROM Instance WHERE {}", where_clause);
+        let sql = format!("SELECT iid FROM Instance WHERE {where_clause}");
 
         let conn = self.meta_db.lock().await;
         let mut stmt = conn

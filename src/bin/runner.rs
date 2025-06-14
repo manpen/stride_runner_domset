@@ -51,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
             command_update(&opts.common, &cmd_opts).await
         }
         Commands::RunEnum(RunEnum::Run(mut cmd_opts)) => {
-            if cmd_opts.solver_binary.to_string_lossy().len() == 0 {
+            if cmd_opts.solver_binary.to_string_lossy().is_empty() {
                 anyhow::bail!("Missing solver binary; please set --solver-bin");
             }
 
@@ -105,7 +105,7 @@ fn read_and_register_settings() -> anyhow::Result<Settings> {
     }
 
     let settings = Settings::load_from_default_path()
-        .with_context(|| format!("Reading settings from {:?}", path))?;
+        .with_context(|| format!("Reading settings from {path:?}"))?;
     debug!("Read settings from file: {settings:?}");
     settings.store_to_global_variable()?;
 
