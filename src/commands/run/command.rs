@@ -31,7 +31,7 @@ pub async fn command_run(common_opts: &CommonOpts, cmd_opts: &RunOpts) -> anyhow
         }
         if let Some(path) = cmd_opts.export_iid_only.as_ref() {
             context.write_instance_list(path)?;
-            println!("Wrote instance list to {:?}. Done", path);
+            println!("Wrote instance list to {path:?}. Done");
             return Ok(());
         }
 

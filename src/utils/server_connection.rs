@@ -55,7 +55,7 @@ impl ServerConnection {
     }
 
     pub fn solver_website_for_user(&self, uuid: Uuid) -> Url {
-        let path = format!("runs.html?solver={}", uuid);
+        let path = format!("runs.html?solver={uuid}");
         self.base_url.join(&path).unwrap()
     }
 
