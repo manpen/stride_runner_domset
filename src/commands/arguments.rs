@@ -199,6 +199,9 @@ pub struct RunOpts {
     )]
     pub keep_logs_on_success: bool,
 
+    #[structopt(short = "-c", long, help = "Remove comment lines from instances")]
+    pub strip_comments: bool,
+
     #[structopt(skip)]
     pub solver_args: Vec<String>,
 }
