@@ -1,4 +1,7 @@
-use std::{io::Write, path::Path};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
@@ -58,15 +61,20 @@ pub async fn command_export_instance(
         .fetch_data(&server_conn, &meta_db, cmd_opts.instance)
         .await?;
 
-    let destination = if let Some(pathbuf) = cmd_opts.output.clone() {
-        pathbuf
+    let destination = if let Some(path) = cmd_opts.output.clone() {
+        if path == PathBuf::from("/") {
+            Path::new(&cmd_opts.instance.iid_to_u32().to_string())
+                .with_extension("gr")
+                .to_path_buf()
+        } else {
+            path
+        }
     } else {
-        Path::new(&cmd_opts.instance.iid_to_u32().to_string())
-            .with_extension("gr")
-            .to_path_buf()
+        std::io::stdout().lock().write_all(data.as_bytes())?;
+        return Ok(());
     };
 
-    if !cmd_opts.force && destination.exists() {
+    if !cmd_opts.force && destination.is_file() {
         anyhow::bail!(
             "File already exists: {}; change output path or use -f/--force to overwrite",
             destination.display()
