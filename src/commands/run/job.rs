@@ -146,11 +146,19 @@ impl Job {
     pub async fn main(&self) -> anyhow::Result<JobResult> {
         self.update_state(JobState::Fetching);
         let meta = self.context.meta_data_db().fetch_instance(self.iid).await?;
-        let data = self
+        let mut data = self
             .context
             .instance_data_db()
             .fetch_data_with_did(self.context.server_conn(), self.iid, meta.data_did)
             .await?;
+
+        if self.context.cmd_opts().strip_comments {
+            data = data
+                .lines()
+                .filter(|l| !l.starts_with("c"))
+                .collect::<Vec<&str>>()
+                .join("\n");
+        }
 
         self.update_state(JobState::Starting);
         let env = self.prepare_env_variables(&meta);
